@@ -145,6 +145,26 @@ describe("falsegreen-js rules", () => {
     expect(codes(`test("x", () => { expect(total).toBe(4096); });`)).toContain("D8");
   });
 
+  it("JS5: Vue flushPromises not awaited", () => {
+    expect(codes(`test("x", async () => { flushPromises(); expect(a).toBe(b); });`)).toContain("JS5");
+  });
+
+  it("does not flag awaited flushPromises", () => {
+    expect(codes(`test("x", async () => { await flushPromises(); expect(a).toBe(b); });`)).not.toContain("JS5");
+  });
+
+  it("JS13: Vue Test Utils findComponent as a loose statement", () => {
+    expect(codes(`test("x", () => { wrapper.findComponent(Button); });`)).toContain("JS13");
+  });
+
+  it("JS13: Vue wrapper.find with a selector as a loose statement", () => {
+    expect(codes(`test("x", () => { wrapper.find(".btn"); });`)).toContain("JS13");
+  });
+
+  it("does not flag Array.find (callback arg) as JS13", () => {
+    expect(codes(`test("x", () => { items.find(i => i.id === 1); expect(items).toHaveLength(2); });`)).not.toContain("JS13");
+  });
+
   it("clean test produces no findings", () => {
     const src = `test("greets", () => { expect(greet("Ana")).toBe("hello Ana"); });`;
     expect(codes(src)).toEqual([]);

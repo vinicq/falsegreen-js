@@ -6,6 +6,11 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+### Added
+- Vue/Svelte test-utils coverage: JS5 now flags non-awaited `flushPromises`/`nextTick`/
+  `tick`; JS13 now flags Vue Test Utils `findComponent`/`findAllComponents` and
+  `find`/`findAll` with a string selector used as a loose statement.
+
 ## [0.2.0] - 2026-06-22
 
 ### Added

@@ -223,6 +223,8 @@ function getTestCallback(call: ts.CallExpression): ts.FunctionLikeDeclaration | 
 
 // --- JS5: async query/event not awaited (Testing Library) ------------------
 const ASYNC_AWAIT_LEAVES = new Set(["waitFor", "waitForElementToBeRemoved"]);
+// Vue/Svelte async test helpers that return a promise and must be awaited.
+const VUE_SVELTE_ASYNC = new Set(["flushPromises", "nextTick", "$nextTick", "tick"]);
 function isAsyncQueryCall(name: string): boolean {
   const parts = name.split(".");
   const root = parts[0];
@@ -433,9 +435,17 @@ export function analyze(sf: ts.SourceFile): Finding[] {
         if (detail) push(lineOf(sf, node), "C16", detail);
       }
 
-      // JS5: Testing Library async query/event used without await
+      // JS5: async query/event used without await. Testing Library (findBy*/waitFor/
+      // user-event) plus Vue/Svelte async helpers (flushPromises/nextTick/tick) in
+      // their promise form (no callback arg) used as a bare, non-awaited statement.
       if (isAsyncQueryCall(name) && ts.isExpressionStatement(node.parent)) {
         push(lineOf(sf, node), "JS5", `${name} is not awaited`);
+      } else if (
+        ts.isExpressionStatement(node.parent) && node.arguments.length === 0 &&
+        VUE_SVELTE_ASYNC.has(name.split(".").pop() ?? "")
+      ) {
+        const leaf = name.split(".").pop();
+        push(lineOf(sf, node), "JS5", `${leaf}() is not awaited`);
       }
 
       // JS7: assertion inside a non-awaited setTimeout/setInterval/then callback
@@ -456,10 +466,17 @@ export function analyze(sf: ts.SourceFile): Finding[] {
         }
       }
 
-      // JS13: a sync RTL query used as a loose statement (result never asserted)
+      // JS13: a sync query used as a loose statement (result never asserted).
+      // Testing Library getBy*/queryBy*, and Vue Test Utils findComponent /
+      // findAllComponents always, or find/findAll with a string selector (which
+      // distinguishes wrapper.find('.btn') from Array.prototype.find(fn)).
       if (ts.isExpressionStatement(node.parent)) {
         const qleaf = name.split(".").pop() ?? "";
-        if (/^(getBy|getAllBy|queryBy|queryAllBy)/.test(qleaf)) {
+        const isRtlQuery = /^(getBy|getAllBy|queryBy|queryAllBy)/.test(qleaf);
+        const isVueComponentQuery = qleaf === "findComponent" || qleaf === "findAllComponents";
+        const isVueSelectorQuery = (qleaf === "find" || qleaf === "findAll") &&
+          node.arguments.length > 0 && ts.isStringLiteral(node.arguments[0]);
+        if (isRtlQuery || isVueComponentQuery || isVueSelectorQuery) {
           push(lineOf(sf, node), "JS13", `${qleaf}() result is not asserted`);
         }
       }

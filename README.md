@@ -44,8 +44,9 @@ expect(x);                     // falsegreen: ignore
 ## Runner coverage
 
 Runner-agnostic. The assertion and test vocabulary spans Jest, Vitest, Mocha + Chai,
-Jasmine, AVA, `node:test`, tap, Cypress, Playwright, and Testing Library
-(`@testing-library/*` with `jest-dom` / `jasmine-dom` matchers and `user-event`).
+Jasmine, AVA, `node:test`, tap, Cypress, Playwright, Testing Library
+(`@testing-library/*` with `jest-dom` / `jasmine-dom` matchers and `user-event`),
+and Vue Test Utils (`mount`/`wrapper.find`/`flushPromises`/`nextTick`).
 `expect().matcher()`, chai `expect().to`, `assert`, `x.should`, and AVA `t.is` all
 count as real assertions, so a Mocha or AVA test is not mistaken for one that never
 checks anything.
