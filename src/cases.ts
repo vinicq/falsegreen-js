@@ -32,6 +32,8 @@ export const CASES: Record<string, CaseDef> = {
   C7:  { title: "compares a thing to itself (expect(x).toBe(x))", confidence: "high", judgment: "J2" },
   C8:  { title: "exact equality on a float (fails on rounding, not bugs)", confidence: "low", judgment: "J4" },
   C16: { title: "result depends on time, randomness or a fixed timer", confidence: "low", judgment: "J1" },
+  C18: { title: "compares String()/JSON.stringify()/`${x}` of a value to a literal (checks formatting, not the value)", confidence: "low", judgment: "J2" },
+  C21: { title: "every assertion is conditional — none runs unconditionally", confidence: "low", judgment: "J1" },
   CC:  { title: "commented-out assertion (check switched off)", confidence: "low", judgment: "J1" },
 
   // --- JS/TS ecosystem-specific --------------------------------------------
@@ -41,6 +43,7 @@ export const CASES: Record<string, CaseDef> = {
   JS4: { title: "skipped test (it.skip / xit / xdescribe / it.todo) never runs", confidence: "low", judgment: "J1" },
   JS5: { title: "async query/event not awaited (findBy* / waitFor / user-event) — the assertion may never settle", confidence: "low", judgment: "J1" },
   JS6: { title: "empty describe/suite block — the suite reports green but runs nothing", confidence: "high", judgment: "J1" },
+  JS7: { title: "assertion inside a non-awaited setTimeout/setInterval/then callback — it may run after the test ends", confidence: "low", judgment: "J1" },
   JS9: { title: "assertion in a dead branch (if(false) / if(true){}else) — it never runs", confidence: "high", judgment: "J1" },
   JS11: { title: "try/catch swallows the assertion — a failing expect is caught and the test stays green", confidence: "low", judgment: "J1" },
 };

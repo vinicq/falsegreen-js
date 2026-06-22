@@ -62,6 +62,43 @@ function isLiteral(e: ts.Expression | undefined): boolean {
   );
 }
 
+/** A value turned into text: String(x), JSON.stringify(x), x.toString(), `${x}`. */
+function isStringify(e?: ts.Expression): boolean {
+  if (!e) return false;
+  if (ts.isTemplateExpression(e)) return true;
+  if (ts.isCallExpression(e)) {
+    const n = calleeName(e.expression);
+    const leaf = n.split(".").pop() ?? "";
+    return leaf === "String" || n === "JSON.stringify" || leaf === "toString" || leaf === "toJSON";
+  }
+  return false;
+}
+
+const CONDITIONAL_ANCESTORS = new Set<ts.SyntaxKind>([
+  ts.SyntaxKind.IfStatement, ts.SyntaxKind.ForStatement, ts.SyntaxKind.ForOfStatement,
+  ts.SyntaxKind.ForInStatement, ts.SyntaxKind.WhileStatement, ts.SyntaxKind.DoStatement,
+  ts.SyntaxKind.SwitchStatement, ts.SyntaxKind.CatchClause, ts.SyntaxKind.ConditionalExpression,
+]);
+
+/** True if the function has at least one assertion and every one of them sits under a
+ *  conditional (if/for/while/switch/catch/?:) — so none runs unconditionally (C21). */
+function assertionsAllConditional(fn: ts.Node): boolean {
+  const asserts: ts.Node[] = [];
+  const walk = (n: ts.Node) => { if (isAssertionNode(n)) asserts.push(n); ts.forEachChild(n, walk); };
+  ts.forEachChild(fn, walk);
+  if (asserts.length === 0) return false;
+  for (const a of asserts) {
+    let p: ts.Node | undefined = a.parent;
+    let conditional = false;
+    while (p && p !== fn) {
+      if (CONDITIONAL_ANCESTORS.has(p.kind)) { conditional = true; break; }
+      p = p.parent;
+    }
+    if (!conditional) return false;
+  }
+  return true;
+}
+
 function containsCall(node: ts.Node): boolean {
   let found = false;
   const walk = (n: ts.Node) => {
@@ -261,6 +298,9 @@ export function analyze(sf: ts.SourceFile): Finding[] {
             if (ms.length > 0 && ms.every((m) => SNAPSHOT_MATCHERS.has(m))) {
               push(line, "JS3", "the only assertion is a snapshot");
             }
+            if (assertionsAllConditional(cb)) {
+              push(line, "C21", "every assertion is guarded by a condition");
+            }
           }
         }
       }
@@ -316,6 +356,9 @@ export function analyze(sf: ts.SourceFile): Finding[] {
           if (!Number.isInteger(v) && v !== 0 && v !== 1) {
             push(lineOf(sf, node), "C8", "exact equality on a float; use toBeCloseTo");
           }
+        } else if (EQUALITY_MATCHERS.has(chain.matcher) && isStringify(subj) && arg && ts.isStringLiteral(arg)) {
+          // C18 sensitive equality: compares the stringified form to a literal
+          push(lineOf(sf, node), "C18", "compares the stringified form of a value to a literal");
         }
       }
 
@@ -328,6 +371,24 @@ export function analyze(sf: ts.SourceFile): Finding[] {
       // JS5: Testing Library async query/event used without await
       if (isAsyncQueryCall(name) && ts.isExpressionStatement(node.parent)) {
         push(lineOf(sf, node), "JS5", `${name} is not awaited`);
+      }
+
+      // JS7: assertion inside a non-awaited setTimeout/setInterval/then callback
+      {
+        const leaf = name.split(".").pop() ?? "";
+        const isTimer = name === "setTimeout" || name === "setInterval";
+        const isThen = leaf === "then" || leaf === "catch" || leaf === "finally";
+        if (isTimer || isThen) {
+          const cb = node.arguments.find((a) => ts.isArrowFunction(a) || ts.isFunctionExpression(a));
+          if (cb && containsAssertion(cb)) {
+            const awaitedOrChained = !ts.isExpressionStatement(node.parent);
+            if (isTimer && !fakeTimers) {
+              push(lineOf(sf, node), "JS7", `assertion inside a non-awaited ${name}() callback`);
+            } else if (isThen && !awaitedOrChained) {
+              push(lineOf(sf, node), "JS7", `assertion inside a non-awaited .${leaf}() callback`);
+            }
+          }
+        }
       }
     }
 

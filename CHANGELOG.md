@@ -17,9 +17,14 @@ All notable changes to this project are documented here. The format is based on
   `node:test`, tap, Cypress, Playwright, Testing Library (jest-dom matchers).
 - Detection codes:
   - Shared concept with `falsegreen` (Python): C2, C2b, C5, C7, C8, C16, CC.
+  - Shared, additional: C18 (sensitive equality on a stringified value), C21 (every
+    assertion is conditional).
   - JS/TS-specific: JS1 (focused test), JS2 (expect with no matcher), JS3 (snapshot-only),
     JS4 (skipped test), JS5 (async query/event not awaited), JS6 (empty describe),
-    JS9 (assertion in a dead literal branch), JS11 (try/catch swallows the assertion).
+    JS7 (assertion in a non-awaited timer/then callback), JS9 (assertion in a dead literal
+    branch), JS11 (try/catch swallows the assertion).
+- Custom assertion helpers (`assert*`/`expect*` naming, e.g. `util.assertEqual`) are
+  recognized as assertions, reducing C2b false positives.
 - CLI: paths, `--staged`, `--json`, `--disable`, `--version`, `--help`. Exit codes
   0/10/20. Inline suppression `// falsegreen: ignore[CODE]`. Config via `falsegreen.json`,
   `.falsegreenrc.json`, or a `falsegreen` key in `package.json`.

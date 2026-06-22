@@ -57,6 +57,22 @@ const t = Date.now();                       // flagged
 ```
 Suppressed when the file uses fake timers (`useFakeTimers`). Clean: seeded/frozen values.
 
+## C18 — sensitive equality on a stringified value (low, J2)
+
+```ts
+expect(String(user)).toBe("[object Object]");   // flagged
+expect(`${date}`).toBe("Mon Jan 01 2024");       // flagged
+```
+Checks the formatting, not the value. A repr change breaks it with no real defect. Clean:
+`expect(user.name).toBe("Ana")`.
+
+## C21 — every assertion is conditional (low, J1)
+
+```ts
+test("x", () => { if (ready) { expect(a).toBe(b); } }); // flagged: may run zero times
+```
+Clean: at least one assertion runs unconditionally.
+
 ## CC — commented-out assertion (low, J1)
 
 ```ts
@@ -103,6 +119,16 @@ Also `waitFor`, `userEvent.*`. Clean: `await screen.findByText("Saved")`.
 ```ts
 describe("auth", () => {});                  // flagged: green suite, runs nothing
 ```
+
+## JS7 — assertion in a non-awaited callback (low, J1)
+
+```ts
+test("x", () => { setTimeout(() => { expect(a).toBe(b); }, 10); }); // flagged
+promise.then(() => expect(x).toBe(y));                              // flagged (not awaited)
+```
+The assertion may run after the test resolves; a failure becomes an unhandled error, not a
+red test. Suppressed when the file uses fake timers. Clean: `await` the promise, or use the
+`done` callback.
 
 ## JS9 — assertion in a dead branch (high, J1)
 

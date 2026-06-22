@@ -67,6 +67,8 @@ line up in the research. `JS*` codes are ecosystem-specific.
 | C7  | high | compares a thing to itself (`expect(x).toBe(x)`) |
 | C8  | low  | exact equality on a float (use `toBeCloseTo`) |
 | C16 | low  | result depends on `Date.now`, `Math.random`, or a fixed timer |
+| C18 | low  | compares `String(x)` / `JSON.stringify(x)` / `` `${x}` `` to a literal (formatting, not value) |
+| C21 | low  | every assertion is conditional — none runs unconditionally |
 | CC  | low  | commented-out assertion |
 | JS1 | high | focused test (`it.only` / `fit`) silently skips the rest of the suite |
 | JS2 | high | `expect(x)` with no matcher — the assertion never runs |
@@ -74,6 +76,7 @@ line up in the research. `JS*` codes are ecosystem-specific.
 | JS4 | low  | skipped test (`it.skip` / `xit` / `it.todo`) never runs |
 | JS5 | low  | async query/event not awaited (`findBy*` / `waitFor` / `user-event`) |
 | JS6 | high | empty `describe`/`suite` — the suite is green but runs nothing |
+| JS7 | low  | assertion inside a non-awaited `setTimeout`/`then` callback — may run after the test ends |
 | JS9 | high | assertion in a dead branch (`if(false)` / `if(true){}else`) — never runs |
 | JS11 | low | `try/catch` swallows the assertion — a failing `expect` is caught, test stays green |
 
@@ -82,11 +85,10 @@ Each code carries a judgment tag (J1-J6) shared with the
 
 ### Roadmap (researched, not yet active)
 
-Tracked in the research hub, pending implementation: JS7 (assertion in a non-awaited
-`setTimeout`/`then` callback), JS8 (mocking the unit under test), JS10 (async test with
-no `expect.assertions` and the assertion only in a `catch`), JS12 (`render(<C/>)` with no
-query or assertion), JS13 (a `getBy*`/`queryBy*` query as a loose statement), and a
-Conditional Test Logic code for non-literal branches.
+Tracked in the research hub, pending implementation: JS8 (mocking the unit under test),
+JS10 (async test with no `expect.assertions` and the assertion only in a `catch`), JS12
+(`render(<C/>)`/`mount()` with no query or assertion), JS13 (a `getBy*`/`queryBy*` query
+as a loose statement), and a general Mystery Guest / external-resource code.
 
 ### What carries over from falsegreen, what does not
 

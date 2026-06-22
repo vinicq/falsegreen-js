@@ -83,6 +83,23 @@ describe("falsegreen-js rules", () => {
     expect(codes(src, "comp.test.tsx")).toContain("C2b");
   });
 
+  it("C18: compares stringified form to a literal", () => {
+    expect(codes(`test("x", () => { expect(String(user)).toBe("[object Object]"); });`)).toContain("C18");
+  });
+
+  it("C21: every assertion is conditional", () => {
+    expect(codes(`test("x", () => { if (ready) { expect(a).toBe(b); } });`)).toContain("C21");
+  });
+
+  it("does not flag C21 when an assertion runs unconditionally", () => {
+    const src = `test("x", () => { expect(a).toBe(b); if (ready) { expect(c).toBe(d); } });`;
+    expect(codes(src)).not.toContain("C21");
+  });
+
+  it("JS7: assertion inside a non-awaited setTimeout callback", () => {
+    expect(codes(`test("x", () => { setTimeout(() => { expect(a).toBe(b); }, 10); });`)).toContain("JS7");
+  });
+
   it("custom assertion helper (util.assertEqual) is not C2b", () => {
     const src = `test("x", () => { util.assertEqual<A, B>(true); });`;
     expect(codes(src)).not.toContain("C2b");
