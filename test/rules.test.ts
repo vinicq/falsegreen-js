@@ -178,6 +178,22 @@ describe("falsegreen-js rules", () => {
     expect(isTestFile("src/respec.ts")).toBe(false);            // not a false match
   });
 
+  describe("assertion vocabulary across tools (no false C2b)", () => {
+    it("Chai expect().to.equal", () => {
+      expect(codes(`test("x", () => { service.run(); expect(user).to.equal(admin); });`)).not.toContain("C2b");
+    });
+    it("Chai should", () => {
+      expect(codes(`test("x", () => { service.run(); user.should.equal(admin); });`)).not.toContain("C2b");
+    });
+    it("TestCafe t.expect().eql", () => {
+      expect(codes(`test("x", async t => { await t.click(btn); await t.expect(el.innerText).eql("ok"); });`)).not.toContain("C2b");
+    });
+    it("jest-axe toHaveNoViolations", () => {
+      const src = `test("a11y", async () => { render(<App/>); expect(await axe(container)).toHaveNoViolations(); });`;
+      expect(codes(src, "a.test.tsx")).not.toContain("C2b");
+    });
+  });
+
   it("clean test produces no findings", () => {
     const src = `test("greets", () => { expect(greet("Ana")).toBe("hello Ana"); });`;
     expect(codes(src)).toEqual([]);
