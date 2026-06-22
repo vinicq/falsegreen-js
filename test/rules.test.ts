@@ -194,6 +194,10 @@ describe("falsegreen-js rules", () => {
     });
   });
 
+  it("JS3: visual snapshot only (Playwright toHaveScreenshot)", () => {
+    expect(codes(`test("looks right", async () => { await expect(page).toHaveScreenshot(); });`)).toContain("JS3");
+  });
+
   it("clean test produces no findings", () => {
     const src = `test("greets", () => { expect(greet("Ana")).toBe("hello Ana"); });`;
     expect(codes(src)).toEqual([]);

@@ -25,6 +25,8 @@ const ASSERT_METHODS = new Set([
 const SNAPSHOT_MATCHERS = new Set([
   "toMatchSnapshot", "toMatchInlineSnapshot",
   "toThrowErrorMatchingSnapshot", "toThrowErrorMatchingInlineSnapshot",
+  // visual snapshots (Playwright): the baseline is generated from the output too
+  "toHaveScreenshot", "toMatchScreenshot",
 ]);
 const EQUALITY_MATCHERS = new Set(["toBe", "toEqual", "toStrictEqual"]);
 

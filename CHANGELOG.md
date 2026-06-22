@@ -6,6 +6,9 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+### Added
+- JS3 now covers visual snapshots (Playwright `toHaveScreenshot`/`toMatchScreenshot`): a test whose only check is a visual snapshot is snapshot-only (the baseline comes from the output). Percy `percySnapshot()`/`cy.percySnapshot()` is not a runtime assertion, so a percy-only test surfaces as no-assertion (C2b).
+
 ### Fixed
 - Test-file discovery now matches more JS/TS naming conventions: Cypress `.cy.*`,
   Deno/Go `_test.*`, Jasmine `*Spec.*`, Angular/Protractor `.e2e-spec.*`, and `.e2e.*`
