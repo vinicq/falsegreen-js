@@ -38,5 +38,11 @@ jobs:
       - name: Tag matches package version
         if: github.event_name == 'release'
         run: test "v$(node -p "require('./package.json').version")" = "${{ github.ref_name }}"
-      - name: Publish to npm
-        run: npm publish --provenance --access public
+      - name: Publish to npm (skip if the version is already published)
+        run: |
+          V=$(node -p "require('./package.json').version")
+          if npm view "falsegreen-js@$V" version >/dev/null 2>&1; then
+            echo "falsegreen-js@$V already on npm — skipping publish"
+          else
+            npm publish --provenance --access public
+          fi
