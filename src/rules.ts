@@ -114,6 +114,12 @@ function isAssertionNode(node: ts.Node): boolean {
     // AVA (t.is), node:test/tap (t.ok), Cypress (cy....should), QUnit
     if (ASSERT_ROOTS.has(root) && ASSERT_METHODS.has(leaf)) return true;
     if (leaf === "should") return true;            // x.should() (chai/Cypress as a call)
+    // custom assertion helpers by naming convention: util.assertEqual(...),
+    // assertType(...), expectType(...), checkX(...). Bare expect() is excluded
+    // (that is JS2). Recognizing these avoids C2b false positives in projects
+    // that extract assertions into helpers.
+    if (leaf.startsWith("assert")) return true;
+    if (leaf.startsWith("expect") && leaf !== "expect") return true;
   }
   // chai/Cypress fluent: x.should.equal / cy.get().should — the `.should` access
   if (ts.isPropertyAccessExpression(node) && node.name.text === "should") return true;
@@ -348,8 +354,11 @@ export function analyze(sf: ts.SourceFile): Finding[] {
   visit(sf);
 
   // CC: commented-out assertion (text scan over single-line comments)
+  // CC: a single-line `//` comment that is a commented-out assertion call.
+  // Requires the call paren (expect(/assert(/assert.x() or a .should chain) so it
+  // does not match JSDoc prose like ` * assert that ...`.
   const lines = text.split(/\r?\n/);
-  const ccRe = /^\s*(\/\/|\*)\s*(expect\s*\(|assert(\.|\s*\()|.*\.should\b)/;
+  const ccRe = /^\s*\/\/\s*(?:await\s+)?(?:expect\s*\(|assert(?:\.\w+)?\s*\(|[\w.]+\.should\b)/;
   lines.forEach((ln, i) => {
     if (ccRe.test(ln)) push(i + 1, "CC", "assertion is commented out");
   });

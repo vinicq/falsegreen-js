@@ -83,6 +83,16 @@ describe("falsegreen-js rules", () => {
     expect(codes(src, "comp.test.tsx")).toContain("C2b");
   });
 
+  it("custom assertion helper (util.assertEqual) is not C2b", () => {
+    const src = `test("x", () => { util.assertEqual<A, B>(true); });`;
+    expect(codes(src)).not.toContain("C2b");
+  });
+
+  it("does not flag commented prose in JSDoc as CC", () => {
+    const src = `/**\n * assert that the value is valid\n */\ntest("x", () => { expect(a).toBe(b); });`;
+    expect(codes(src)).not.toContain("CC");
+  });
+
   it("clean test produces no findings", () => {
     const src = `test("adds", () => { expect(add(2, 3)).toBe(5); });`;
     expect(codes(src)).toEqual([]);
