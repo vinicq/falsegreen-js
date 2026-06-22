@@ -1,0 +1,8 @@
+- id: falsegreen-js
+  name: falsegreen-js (false-positive test scanner)
+  description: Flag JS/TS unit tests that pass without protecting anything.
+  entry: falsegreen-js --staged
+  language: node
+  files: \.(m|c)?[jt]sx?$
+  pass_filenames: false
+  require_serial: true

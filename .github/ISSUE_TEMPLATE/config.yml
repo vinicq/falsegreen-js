@@ -1,0 +1,11 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Security report
+    url: https://github.com/vinicq/falsegreen-js/security/advisories/new
+    about: Report a vulnerability privately, not as a public issue.
+  - name: falsegreen (Python scanner)
+    url: https://github.com/vinicq/falsegreen
+    about: The Python sibling of this tool.
+  - name: falsegreen-skill (LLM semantic pass)
+    url: https://github.com/vinicq/falsegreen-skill
+    about: The semantic, multi-language companion.

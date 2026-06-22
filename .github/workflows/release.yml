@@ -1,0 +1,42 @@
+name: release
+
+# Builds the package and publishes it to npm via Trusted Publishing (OIDC).
+# No long-lived NPM_TOKEN: the publish step exchanges a short-lived OIDC identity
+# with the npm registry and attaches build provenance.
+# Fires on a GitHub release being published, or manually for an existing tag.
+#
+# One-time human setup before the first run (see RELEASE.md):
+#   1. npmjs.com: add a Trusted Publisher for package `falsegreen-js`
+#      (GitHub owner vinicq, repo falsegreen-js, workflow release.yml).
+#   2. First publish of a brand-new package name may require an initial manual
+#      `npm publish` to claim the name, depending on npm policy at the time.
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write   # required for OIDC trusted publishing + provenance
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          registry-url: "https://registry.npmjs.org"
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - run: npm test
+      - name: Tag matches package version
+        if: github.event_name == 'release'
+        run: test "v$(node -p "require('./package.json').version")" = "${{ github.ref_name }}"
+      - name: Publish to npm
+        run: npm publish --provenance --access public

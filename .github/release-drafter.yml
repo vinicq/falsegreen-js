@@ -1,0 +1,21 @@
+name-template: "v$RESOLVED_VERSION"
+tag-template: "v$RESOLVED_VERSION"
+categories:
+  - title: "New detection codes"
+    labels: ["code", "detection"]
+  - title: "Fixes"
+    labels: ["bug", "false-positive"]
+  - title: "Docs"
+    labels: ["docs"]
+  - title: "Maintenance"
+    labels: ["chore", "ci", "deps"]
+change-template: "- $TITLE (#$NUMBER)"
+version-resolver:
+  minor:
+    labels: ["code", "detection", "feature"]
+  patch:
+    labels: ["bug", "false-positive", "docs", "chore"]
+  default: patch
+template: |
+  ## Changes
+  $CHANGES
