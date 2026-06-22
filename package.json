@@ -17,7 +17,7 @@
   "exports": {
     ".": { "types": "./dist/scan.d.ts", "import": "./dist/scan.js" }
   },
-  "publishConfig": { "access": "public", "provenance": true },
+  "publishConfig": { "access": "public" },
   "files": ["dist", "CHANGELOG.md", "CREDITS.md"],
   "scripts": {
     "build": "tsc -p tsconfig.json",
