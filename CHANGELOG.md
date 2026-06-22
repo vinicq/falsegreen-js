@@ -6,19 +6,16 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
-### Added
-
-- More false-green codes: C9 (broad `toThrow`), C37 (duplicate `it.each` case),
-  JS13 (loose RTL query never asserted).
-- Opt-in maintainability group (default off, enable with `--diagnostics` or config
-  `severity`): D1 (assertion roulette), D3 (duplicate assert), D4 (`it.each` without
-  titled cases), D6 (`console.*` in a test), D7 (anonymous test), M2 (long test body).
-
 ## [0.1.0] - 2026-06-22
 
 ### Added
 
 - Initial release. Deterministic AST scanner for false-green test smells in JS/TS.
+- More false-green codes: C9 (broad `toThrow`), C37 (duplicate `it.each` case),
+  JS13 (loose RTL query never asserted).
+- Opt-in maintainability group (default off, enable with `--diagnostics` or config
+  `severity`): D1 (assertion roulette), D3 (duplicate assert), D4 (`it.each` without
+  titled cases), D6 (`console.*` in a test), D7 (anonymous test), M2 (long test body).
 - Parser via the TypeScript compiler API, covering `.js`, `.jsx`, `.ts`, `.tsx`,
   `.mjs`, `.cjs`, `.mts`, `.cts`.
 - Runner-agnostic assertion/test vocabulary: Jest, Vitest, Mocha + Chai, Jasmine, AVA,
