@@ -6,6 +6,8 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-06-22
+
 ### Added
 - D8 (opt-in diagnostic): magic number in an assertion - a bare numeric literal as
   the expected value. The most frequent smell in LLM-generated tests (2410.10628).
@@ -43,5 +45,6 @@ All notable changes to this project are documented here. The format is based on
 - pre-commit hook (`.pre-commit-hooks.yaml`), CI matrix (Node 18/20/22), and an npm
   trusted-publishing release workflow.
 
-[Unreleased]: https://github.com/vinicq/falsegreen-js/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/vinicq/falsegreen-js/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/vinicq/falsegreen-js/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/vinicq/falsegreen-js/releases/tag/v0.1.0
