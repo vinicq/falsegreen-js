@@ -7,6 +7,8 @@ All notable changes to this project are documented here. The format is based on
 ## [Unreleased]
 
 ### Added
+- D8 (opt-in diagnostic): magic number in an assertion - a bare numeric literal as
+  the expected value. The most frequent smell in LLM-generated tests (2410.10628).
 - JS15: inappropriate assertion - the comparison is wrapped in a boolean
   (`expect(a === b).toBe(true)`), so the failure message is blind and the oracle
   weak. Sourced from the xNose "Inappropriate Assertions" smell (Paul et al., 2024).

@@ -100,6 +100,7 @@ default. Enable them with `--diagnostics`, or per code via config `severity`. Th
 | D4 | diagnostic | `it.each`/`test.each` without titled cases (index-only) |
 | D6 | diagnostic | `console.*` in a test body |
 | D7 | diagnostic | anonymous test — empty or missing description |
+| D8 | diagnostic | magic number — a bare numeric literal as the expected value |
 | M2 | coupling | test body exceeds the line-count threshold |
 
 ```bash

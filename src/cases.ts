@@ -59,6 +59,7 @@ export const CASES: Record<string, CaseDef> = {
   D4: { title: "it.each/test.each without titled cases — a failing case is identified only by its index", confidence: "off", judgment: "J4" },
   D6: { title: "console.* in a test body — a debug artifact that bypasses the oracle", confidence: "off", judgment: "J4" },
   D7: { title: "anonymous test — empty or missing description", confidence: "off", judgment: "J4" },
+  D8: { title: "magic number in an assertion — a bare numeric literal instead of a named constant", confidence: "off", judgment: "J4" },
   M2: { title: "test body exceeds the line-count threshold — hard to read and maintain", confidence: "off", judgment: "J5" },
 };
 

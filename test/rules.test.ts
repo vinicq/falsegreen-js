@@ -141,8 +141,12 @@ describe("falsegreen-js rules", () => {
     expect(codes(`test("x", () => { expect(a).toBe(b); });`)).not.toContain("JS15");
   });
 
+  it("D8: magic number in an assertion (diagnostic)", () => {
+    expect(codes(`test("x", () => { expect(total).toBe(4096); });`)).toContain("D8");
+  });
+
   it("clean test produces no findings", () => {
-    const src = `test("adds", () => { expect(add(2, 3)).toBe(5); });`;
+    const src = `test("greets", () => { expect(greet("Ana")).toBe("hello Ana"); });`;
     expect(codes(src)).toEqual([]);
   });
 });

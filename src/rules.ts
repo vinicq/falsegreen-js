@@ -388,6 +388,15 @@ export function analyze(sf: ts.SourceFile): Finding[] {
         if (subjIsComparison && boolMatcher) {
           push(lineOf(sf, node), "JS15", "comparison wrapped in a boolean; assert the values directly");
         }
+        // D8 (diagnostic, opt-in): a magic integer literal as the expected value.
+        // Floats are C8's concern; D8 covers bare integers abs > 1.
+        if ((chain.matcher === "toBe" || chain.matcher === "toEqual" || chain.matcher === "toStrictEqual") &&
+            arg && ts.isNumericLiteral(arg)) {
+          const v = Number(arg.text);
+          if (Number.isInteger(v) && Math.abs(v) > 1) {
+            push(lineOf(sf, node), "D8", `magic number ${arg.text} in the assertion`);
+          }
+        }
         // C5 always-true
         if (chain.matcher === "toBeTruthy" && literalTruthiness(subj) === true) {
           push(lineOf(sf, node), "C5", "toBeTruthy on a constant truthy literal");
