@@ -1,0 +1,41 @@
+{
+  "name": "falsegreen-js",
+  "version": "0.1.0",
+  "description": "Find JavaScript/TypeScript unit tests that give false positives: green tests that protect nothing, and tests that pass while asserting the wrong thing. Deterministic AST scanner, sibling of falsegreen (Python).",
+  "keywords": [
+    "jest", "vitest", "mocha", "testing", "test-smells", "false-positive",
+    "static-analysis", "typescript", "javascript", "tsx", "jsx", "code-quality",
+    "ai-generated-tests"
+  ],
+  "license": "MIT",
+  "author": "Vinicius Queiroz",
+  "type": "module",
+  "engines": { "node": ">=18" },
+  "bin": { "falsegreen-js": "dist/cli.js" },
+  "main": "dist/scan.js",
+  "types": "dist/scan.d.ts",
+  "exports": {
+    ".": { "types": "./dist/scan.d.ts", "import": "./dist/scan.js" }
+  },
+  "publishConfig": { "access": "public", "provenance": true },
+  "files": ["dist", "CHANGELOG.md", "CREDITS.md"],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "vitest run",
+    "lint": "tsc -p tsconfig.json --noEmit",
+    "prepublishOnly": "npm run build"
+  },
+  "dependencies": {
+    "typescript": "^5.4.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "vitest": "^1.6.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/vinicq/falsegreen-js.git"
+  },
+  "homepage": "https://github.com/vinicq/falsegreen-js#readme",
+  "bugs": { "url": "https://github.com/vinicq/falsegreen-js/issues" }
+}
