@@ -370,6 +370,24 @@ export function analyze(sf: ts.SourceFile): Finding[] {
         if ((chain.matcher === "toThrow" || chain.matcher === "toThrowError") && chain.args.length === 0) {
           push(lineOf(sf, node), "C9", "toThrow() with no error type or message accepts any error");
         }
+        // JS15 inappropriate assertion: the comparison is wrapped in a boolean, so
+        // the matcher only sees true/false (expect(a === b).toBe(true)). The failure
+        // message is blind ("expected false to be true") and the oracle is weak.
+        const COMPARISON_OPS = new Set<ts.SyntaxKind>([
+          ts.SyntaxKind.EqualsEqualsEqualsToken, ts.SyntaxKind.ExclamationEqualsEqualsToken,
+          ts.SyntaxKind.EqualsEqualsToken, ts.SyntaxKind.ExclamationEqualsToken,
+          ts.SyntaxKind.LessThanToken, ts.SyntaxKind.GreaterThanToken,
+          ts.SyntaxKind.LessThanEqualsToken, ts.SyntaxKind.GreaterThanEqualsToken,
+        ]);
+        const subjIsComparison = subj !== undefined && ts.isBinaryExpression(subj) &&
+          COMPARISON_OPS.has(subj.operatorToken.kind);
+        const boolMatcher =
+          ((chain.matcher === "toBe" || chain.matcher === "toEqual" || chain.matcher === "toStrictEqual") &&
+            arg !== undefined && (arg.kind === ts.SyntaxKind.TrueKeyword || arg.kind === ts.SyntaxKind.FalseKeyword)) ||
+          chain.matcher === "toBeTruthy" || chain.matcher === "toBeFalsy";
+        if (subjIsComparison && boolMatcher) {
+          push(lineOf(sf, node), "JS15", "comparison wrapped in a boolean; assert the values directly");
+        }
         // C5 always-true
         if (chain.matcher === "toBeTruthy" && literalTruthiness(subj) === true) {
           push(lineOf(sf, node), "C5", "toBeTruthy on a constant truthy literal");

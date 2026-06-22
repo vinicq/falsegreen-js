@@ -6,6 +6,11 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+### Added
+- JS15: inappropriate assertion - the comparison is wrapped in a boolean
+  (`expect(a === b).toBe(true)`), so the failure message is blind and the oracle
+  weak. Sourced from the xNose "Inappropriate Assertions" smell (Paul et al., 2024).
+
 ## [0.1.0] - 2026-06-22
 
 ### Added

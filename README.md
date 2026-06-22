@@ -82,6 +82,7 @@ line up in the research. `JS*` codes are ecosystem-specific.
 | JS9 | high | assertion in a dead branch (`if(false)` / `if(true){}else`) — never runs |
 | JS11 | low | `try/catch` swallows the assertion — a failing `expect` is caught, test stays green |
 | JS13 | low | query (`getBy*`/`queryBy*`) as a loose statement — its result is never asserted |
+| JS15 | low | inappropriate assertion — comparison wrapped in a boolean (`expect(a===b).toBe(true)`), blind failure message |
 
 Each code carries a judgment tag (J1-J6) shared with the
 [falsegreen-skill](https://github.com/vinicq/falsegreen-skill) semantic framework.

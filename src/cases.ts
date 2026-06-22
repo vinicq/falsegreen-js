@@ -49,6 +49,7 @@ export const CASES: Record<string, CaseDef> = {
   JS9: { title: "assertion in a dead branch (if(false) / if(true){}else) — it never runs", confidence: "high", judgment: "J1" },
   JS11: { title: "try/catch swallows the assertion — a failing expect is caught and the test stays green", confidence: "low", judgment: "J1" },
   JS13: { title: "query (getBy*/queryBy*/wrapper.find) as a loose statement — its result is never asserted", confidence: "low", judgment: "J4" },
+  JS15: { title: "inappropriate assertion — the comparison is wrapped in a boolean (expect(a===b).toBe(true)), so the failure message is blind", confidence: "low", judgment: "J4" },
 
   // --- diagnostic group (maintainability; default off, opt-in via --diagnostics
   // or config severity). These are NOT false-green: the test still protects. They

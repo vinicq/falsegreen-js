@@ -133,6 +133,14 @@ describe("falsegreen-js rules", () => {
     expect(codes(src)).toContain("D4");
   });
 
+  it("JS15: inappropriate assertion (comparison wrapped in a boolean)", () => {
+    expect(codes(`test("x", () => { expect(a === b).toBe(true); });`)).toContain("JS15");
+  });
+
+  it("does not flag a direct value assertion as JS15", () => {
+    expect(codes(`test("x", () => { expect(a).toBe(b); });`)).not.toContain("JS15");
+  });
+
   it("clean test produces no findings", () => {
     const src = `test("adds", () => { expect(add(2, 3)).toBe(5); });`;
     expect(codes(src)).toEqual([]);
