@@ -6,6 +6,11 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+### Fixed
+- Test-file discovery now matches Cypress `.cy.{js,ts,jsx,tsx}` files (and the
+  `cypress`/`e2e` directories). Previously only `.test`/`.spec` were discovered, so
+  Cypress specs were silently skipped.
+
 ### Added
 - Vue/Svelte test-utils coverage: JS5 now flags non-awaited `flushPromises`/`nextTick`/
   `tick`; JS13 now flags Vue Test Utils `findComponent`/`findAllComponents` and

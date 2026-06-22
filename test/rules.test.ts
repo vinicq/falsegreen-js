@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { parse } from "../src/parse.js";
 import { analyze } from "../src/rules.js";
+import { isTestFile } from "../src/scan.js";
 
 function codes(src: string, file = "x.test.ts"): string[] {
   return analyze(parse(file, src)).map((f) => f.code);
@@ -163,6 +164,13 @@ describe("falsegreen-js rules", () => {
 
   it("does not flag Array.find (callback arg) as JS13", () => {
     expect(codes(`test("x", () => { items.find(i => i.id === 1); expect(items).toHaveLength(2); });`)).not.toContain("JS13");
+  });
+
+  it("discovers Cypress .cy files and standard test files", () => {
+    expect(isTestFile("cypress/e2e/login.cy.ts")).toBe(true);
+    expect(isTestFile("src/Button.cy.tsx")).toBe(true);
+    expect(isTestFile("tests/auth.spec.ts")).toBe(true);
+    expect(isTestFile("src/utils.ts")).toBe(false);
   });
 
   it("clean test produces no findings", () => {
