@@ -198,6 +198,36 @@ describe("falsegreen-js rules", () => {
     expect(codes(`test("looks right", async () => { await expect(page).toHaveScreenshot(); });`)).toContain("JS3");
   });
 
+  it("C6: weak check (toBeTruthy on a real value)", () => {
+    expect(codes(`test("x", () => { const r = compute(); expect(r).toBeTruthy(); });`)).toContain("C6");
+  });
+
+  it("C6: only-not-empty (length > 0)", () => {
+    expect(codes(`test("x", () => { expect(items.length).toBeGreaterThan(0); });`)).toContain("C6");
+  });
+
+  it("C20: assertion in dead code after return", () => {
+    expect(codes(`test("x", () => { doThing(); return; expect(a).toBe(b); });`)).toContain("C20");
+  });
+
+  it("C23: hard-coded URL (mystery guest)", () => {
+    expect(codes(`test("x", () => { const r = fetch("https://api.example.com/u"); expect(r).toBeDefined(); });`)).toContain("C23");
+  });
+
+  it("C23: reads a real file at a literal path", () => {
+    expect(codes(`test("x", () => { const d = readFileSync("/var/data/fixture.json"); expect(d).toBe(1); });`)).toContain("C23");
+  });
+
+  it("JS8: mocks the unit under test and asserts it directly", () => {
+    const src = `import { calc } from "./calc";\njest.mock("./calc");\ntest("x", () => { expect(calc(2)).toBe(4); });`;
+    expect(codes(src)).toContain("JS8");
+  });
+
+  it("does not flag JS8 when mocking a dependency, not the SUT", () => {
+    const src = `import { calc } from "./calc";\njest.mock("./db");\ntest("x", () => { expect(calc(2)).toBe(4); });`;
+    expect(codes(src)).not.toContain("JS8");
+  });
+
   it("clean test produces no findings", () => {
     const src = `test("greets", () => { expect(greet("Ana")).toBe("hello Ana"); });`;
     expect(codes(src)).toEqual([]);

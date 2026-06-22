@@ -65,7 +65,10 @@ line up in the research. `JS*` codes are ecosystem-specific.
 | C2  | high | test with no check at all (empty body) |
 | C2b | low  | test calls code but asserts nothing |
 | C5  | high | always-true check (`expect(true).toBe(true)`, `assert(1)`) |
+| C6  | low  | weak check — only verifies something came back (`toBeTruthy`/`toBeDefined`, `length > 0`) |
 | C7  | high | compares a thing to itself (`expect(x).toBe(x)`) |
+| C20 | high | assertion in dead code after a `return`/`throw` — it never runs |
+| C23 | low  | reads a real file at a literal path, or a hard-coded URL (mystery guest) |
 | C8  | low  | exact equality on a float (use `toBeCloseTo`) |
 | C9  | low  | `toThrow()` with no error type or message — accepts any error |
 | C16 | low  | result depends on `Date.now`, `Math.random`, or a fixed timer |
@@ -80,6 +83,7 @@ line up in the research. `JS*` codes are ecosystem-specific.
 | JS5 | low  | async query/event not awaited (`findBy*` / `waitFor` / `user-event`) |
 | JS6 | high | empty `describe`/`suite` — the suite is green but runs nothing |
 | JS7 | low  | assertion inside a non-awaited `setTimeout`/`then` callback — may run after the test ends |
+| JS8 | low  | mocks the unit under test (`jest.mock`/`vi.mock` of an imported module asserted directly) |
 | JS9 | high | assertion in a dead branch (`if(false)` / `if(true){}else`) — never runs |
 | JS11 | low | `try/catch` swallows the assertion — a failing `expect` is caught, test stays green |
 | JS13 | low | query (`getBy*`/`queryBy*`) as a loose statement — its result is never asserted |

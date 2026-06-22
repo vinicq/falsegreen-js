@@ -42,6 +42,22 @@ function calleeName(expr: ts.Expression): string {
   return "";
 }
 
+/** Leftmost identifier of a property/call/element chain: `a.b().c` -> "a". */
+function rootIdent(e: ts.Expression | undefined): string | null {
+  let cur: ts.Expression | undefined = e;
+  while (cur) {
+    if (ts.isIdentifier(cur)) return cur.text;
+    if (ts.isPropertyAccessExpression(cur) || ts.isCallExpression(cur) || ts.isElementAccessExpression(cur)) {
+      cur = cur.expression;
+    } else if (ts.isParenthesizedExpression(cur) || ts.isNonNullExpression(cur)) {
+      cur = cur.expression;
+    } else {
+      return null;
+    }
+  }
+  return null;
+}
+
 function literalTruthiness(e: ts.Expression | undefined): boolean | null {
   if (!e) return null;
   if (e.kind === ts.SyntaxKind.TrueKeyword) return true;
@@ -262,10 +278,27 @@ export function analyze(sf: ts.SourceFile): Finding[] {
     findings.push(makeFinding(file, line, code, detail));
   };
 
+  // JS8 (self-mock) file-level state
+  const mockedAt = new Map<string, number>();      // module -> line of jest.mock/vi.mock
+  const importBinding = new Map<string, string>(); // binding name -> module
+  const expectRoots = new Set<string>();           // root identifier used as expect subject
+
   const visit = (node: ts.Node): void => {
+    if (ts.isImportDeclaration(node) && ts.isStringLiteral(node.moduleSpecifier)) {
+      const mod = node.moduleSpecifier.text;
+      const clause = node.importClause;
+      if (clause?.name) importBinding.set(clause.name.text, mod);
+      const nb = clause?.namedBindings;
+      if (nb && ts.isNamespaceImport(nb)) importBinding.set(nb.name.text, mod);
+      if (nb && ts.isNamedImports(nb)) for (const el of nb.elements) importBinding.set(el.name.text, mod);
+    }
     if (ts.isCallExpression(node)) {
       const name = calleeName(node.expression);
       const root = name.split(".")[0];
+      if ((name === "jest.mock" || name === "vi.mock" || name === "jest.doMock" || name === "vi.doMock") &&
+          node.arguments[0] && ts.isStringLiteral(node.arguments[0])) {
+        mockedAt.set(node.arguments[0].text, lineOf(sf, node));
+      }
       const modifier = name.split(".")[1] ?? "";
 
       // JS1 focused / JS4 skipped
@@ -294,6 +327,14 @@ export function analyze(sf: ts.SourceFile): Finding[] {
         if (cb && cb.body && ts.isBlock(cb.body)) {
           const stmts = cb.body.statements;
           const line = lineOf(sf, node);
+          // C20: an assertion after a return/throw in the test body is dead code
+          let terminated = false;
+          for (const st of stmts) {
+            if (terminated && containsAssertion(st)) {
+              push(lineOf(sf, st), "C20", "assertion after a return/throw never runs");
+            }
+            if (ts.isReturnStatement(st) || ts.isThrowStatement(st)) terminated = true;
+          }
           if (stmts.length === 0) {
             push(line, "C2", "test body is empty");
           } else if (!hasAssertion(cb) && containsCall(cb.body)) {
@@ -367,6 +408,10 @@ export function analyze(sf: ts.SourceFile): Finding[] {
 
       // expect-chain matchers (C5, C7, C8)
       const chain = expectChain(node);
+      if (chain && chain.subject) {
+        const r = rootIdent(chain.subject);
+        if (r) expectRoots.add(r);
+      }
       if (chain && !chain.negated) {
         const subj = chain.subject;
         const arg = chain.args[0];
@@ -399,6 +444,17 @@ export function analyze(sf: ts.SourceFile): Finding[] {
           const v = Number(arg.text);
           if (Number.isInteger(v) && Math.abs(v) > 1) {
             push(lineOf(sf, node), "D8", `magic number ${arg.text} in the assertion`);
+          }
+        }
+        // C6 weak check: truthiness/defined-only, or length > 0, on a real (non-literal) value
+        if (subj && !isLiteral(subj) && !subjIsComparison) {
+          if (chain.matcher === "toBeTruthy" || chain.matcher === "toBeFalsy" || chain.matcher === "toBeDefined") {
+            push(lineOf(sf, node), "C6", "only checks the value is present, not the expected result");
+          } else if (arg && ts.isNumericLiteral(arg) &&
+                     ((chain.matcher === "toBeGreaterThan" && Number(arg.text) === 0) ||
+                      (chain.matcher === "toBeGreaterThanOrEqual" && Number(arg.text) === 1)) &&
+                     /\.length\b/.test(subj.getText(sf))) {
+            push(lineOf(sf, node), "C6", "only checks it is not empty");
           }
         }
         // C5 always-true
@@ -435,6 +491,18 @@ export function analyze(sf: ts.SourceFile): Finding[] {
       if (!fakeTimers) {
         const detail = c16Detail(node);
         if (detail) push(lineOf(sf, node), "C16", detail);
+      }
+
+      // C23 mystery guest: real file at a literal path, or a hard-coded URL
+      {
+        const leaf = name.split(".").pop() ?? "";
+        const a0 = node.arguments[0];
+        const lit = a0 && ts.isStringLiteral(a0) ? a0.text : null;
+        if (lit && /^(readFileSync|readFile|openSync|createReadStream)$/.test(leaf) && /[\\/]/.test(lit)) {
+          push(lineOf(sf, node), "C23", "reads a real file at a literal path");
+        } else if (lit && (leaf === "fetch" || name === "fetch" || leaf === "get") && /^https?:\/\//i.test(lit)) {
+          push(lineOf(sf, node), "C23", "hard-coded URL (mystery guest)");
+        }
       }
 
       // JS5: async query/event used without await. Testing Library (findBy*/waitFor/
@@ -527,6 +595,17 @@ export function analyze(sf: ts.SourceFile): Finding[] {
   };
 
   visit(sf);
+
+  // JS8: a mocked module's imported binding is asserted directly -> testing the mock,
+  // not the real unit. Conservative: same module both mocked and imported, and that
+  // import used as an expect subject.
+  for (const [binding, mod] of importBinding) {
+    if (mockedAt.has(mod) && expectRoots.has(binding)) {
+      findings.push(makeFinding(file, mockedAt.get(mod)!, "JS8",
+        `${binding} (from ${mod}) is mocked and asserted directly`));
+      break;
+    }
+  }
 
   // CC: commented-out assertion (text scan over single-line comments)
   // CC: a single-line `//` comment that is a commented-out assertion call.

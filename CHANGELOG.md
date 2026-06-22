@@ -7,6 +7,11 @@ All notable changes to this project are documented here. The format is based on
 ## [Unreleased]
 
 ### Added
+- Cross-language parity with the Python scanner: C6 (weak check — toBeTruthy/toBeDefined/length>0),
+  C20 (assertion in dead code after return/throw), C23 (mystery guest — real file at a literal
+  path / hard-coded URL), and JS8 (mocks the unit under test and asserts it directly).
+
+### Added
 - JS3 now covers visual snapshots (Playwright `toHaveScreenshot`/`toMatchScreenshot`): a test whose only check is a visual snapshot is snapshot-only (the baseline comes from the output). Percy `percySnapshot()`/`cy.percySnapshot()` is not a runtime assertion, so a percy-only test surfaces as no-assertion (C2b).
 
 ### Fixed
