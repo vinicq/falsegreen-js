@@ -34,6 +34,8 @@ export const CASES: Record<string, CaseDef> = {
   C16: { title: "result depends on time, randomness or a fixed timer", confidence: "low", judgment: "J1" },
   C18: { title: "compares String()/JSON.stringify()/`${x}` of a value to a literal (checks formatting, not the value)", confidence: "low", judgment: "J2" },
   C21: { title: "every assertion is conditional — none runs unconditionally", confidence: "low", judgment: "J1" },
+  C9:  { title: "expect(...).toThrow() with no error type or message — accepts any error", confidence: "low", judgment: "J4" },
+  C37: { title: "duplicate case in it.each/test.each — the same scenario runs twice", confidence: "low", judgment: "J4" },
   CC:  { title: "commented-out assertion (check switched off)", confidence: "low", judgment: "J1" },
 
   // --- JS/TS ecosystem-specific --------------------------------------------
@@ -46,7 +48,21 @@ export const CASES: Record<string, CaseDef> = {
   JS7: { title: "assertion inside a non-awaited setTimeout/setInterval/then callback — it may run after the test ends", confidence: "low", judgment: "J1" },
   JS9: { title: "assertion in a dead branch (if(false) / if(true){}else) — it never runs", confidence: "high", judgment: "J1" },
   JS11: { title: "try/catch swallows the assertion — a failing expect is caught and the test stays green", confidence: "low", judgment: "J1" },
+  JS13: { title: "query (getBy*/queryBy*/wrapper.find) as a loose statement — its result is never asserted", confidence: "low", judgment: "J4" },
+
+  // --- diagnostic group (maintainability; default off, opt-in via --diagnostics
+  // or config severity). These are NOT false-green: the test still protects. They
+  // are a "plus" for test-code health, mirroring falsegreen's D/M group. -------
+  D1: { title: "assertion roulette — many assertions in one test; a failure does not say which", confidence: "off", judgment: "J4" },
+  D3: { title: "duplicate assert — the same assertion appears more than once in a test", confidence: "off", judgment: "J4" },
+  D4: { title: "it.each/test.each without titled cases — a failing case is identified only by its index", confidence: "off", judgment: "J4" },
+  D6: { title: "console.* in a test body — a debug artifact that bypasses the oracle", confidence: "off", judgment: "J4" },
+  D7: { title: "anonymous test — empty or missing description", confidence: "off", judgment: "J4" },
+  M2: { title: "test body exceeds the line-count threshold — hard to read and maintain", confidence: "off", judgment: "J5" },
 };
+
+/** Default thresholds for the diagnostic group (overridable later via config). */
+export const DIAGNOSTIC_THRESHOLDS = { assertionRoulette: 5, longTest: 50 };
 
 export function groupOf(code: string): "false-positive" | "diagnostic" | "coupling" {
   if (code.startsWith("D")) return "diagnostic";

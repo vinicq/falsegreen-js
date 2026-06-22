@@ -1,5 +1,6 @@
 import ts from "typescript";
 import { Finding, makeFinding } from "./types.js";
+import { DIAGNOSTIC_THRESHOLDS } from "./cases.js";
 import { lineOf } from "./parse.js";
 
 // --- test framework vocabulary (runner-agnostic) ---------------------------
@@ -302,6 +303,39 @@ export function analyze(sf: ts.SourceFile): Finding[] {
               push(line, "C21", "every assertion is guarded by a condition");
             }
           }
+
+          // D7: anonymous test (empty or missing description)
+          const desc = node.arguments[0];
+          const emptyStr = (d?: ts.Expression) => d !== undefined &&
+            (ts.isStringLiteral(d) || ts.isNoSubstitutionTemplateLiteral(d)) && d.text.trim() === "";
+          if (desc === cb || desc === undefined || emptyStr(desc)) {
+            push(line, "D7", "test has no description");
+          }
+
+          // diagnostic group (maintainability; emitted always, filtered when off)
+          const asserts: ts.Node[] = [];
+          const consoles: ts.Node[] = [];
+          const walkD = (n: ts.Node) => {
+            if (isAssertionNode(n)) asserts.push(n);
+            if (ts.isCallExpression(n) && calleeName(n.expression).startsWith("console.")) consoles.push(n);
+            ts.forEachChild(n, walkD);
+          };
+          ts.forEachChild(cb, walkD);
+          if (asserts.length >= DIAGNOSTIC_THRESHOLDS.assertionRoulette) {
+            push(line, "D1", `${asserts.length} assertions in one test`);
+          }
+          const seenA = new Set<string>();
+          for (const a of asserts) {
+            const t = a.getText(sf).replace(/\s+/g, " ").trim();
+            if (seenA.has(t)) { push(line, "D3", "an assertion is repeated"); break; }
+            seenA.add(t);
+          }
+          for (const c of consoles) push(lineOf(sf, c), "D6", "console call in a test body");
+          const startL = sf.getLineAndCharacterOfPosition(cb.body.getStart(sf)).line;
+          const endL = sf.getLineAndCharacterOfPosition(cb.body.getEnd()).line;
+          if (endL - startL > DIAGNOSTIC_THRESHOLDS.longTest) {
+            push(line, "M2", `test body spans ${endL - startL} lines`);
+          }
         }
       }
 
@@ -332,6 +366,10 @@ export function analyze(sf: ts.SourceFile): Finding[] {
       if (chain && !chain.negated) {
         const subj = chain.subject;
         const arg = chain.args[0];
+        // C9 over-broad throw assertion: toThrow() with no error type or message
+        if ((chain.matcher === "toThrow" || chain.matcher === "toThrowError") && chain.args.length === 0) {
+          push(lineOf(sf, node), "C9", "toThrow() with no error type or message accepts any error");
+        }
         // C5 always-true
         if (chain.matcher === "toBeTruthy" && literalTruthiness(subj) === true) {
           push(lineOf(sf, node), "C5", "toBeTruthy on a constant truthy literal");
@@ -387,6 +425,36 @@ export function analyze(sf: ts.SourceFile): Finding[] {
             } else if (isThen && !awaitedOrChained) {
               push(lineOf(sf, node), "JS7", `assertion inside a non-awaited .${leaf}() callback`);
             }
+          }
+        }
+      }
+
+      // JS13: a sync RTL query used as a loose statement (result never asserted)
+      if (ts.isExpressionStatement(node.parent)) {
+        const qleaf = name.split(".").pop() ?? "";
+        if (/^(getBy|getAllBy|queryBy|queryAllBy)/.test(qleaf)) {
+          push(lineOf(sf, node), "JS13", `${qleaf}() result is not asserted`);
+        }
+      }
+
+      // C37: duplicate case in it.each/test.each table
+      if (name.endsWith(".each") && node.arguments.length > 0 && ts.isArrayLiteralExpression(node.arguments[0])) {
+        const seen = new Set<string>();
+        for (const el of node.arguments[0].elements) {
+          const t = el.getText(sf).replace(/\s+/g, " ").trim();
+          if (seen.has(t)) { push(lineOf(sf, node), "C37", "duplicate case in the .each table"); break; }
+          seen.add(t);
+        }
+      }
+
+      // D4: it.each/test.each with untitled cases (no %s/%i placeholder)
+      if (ts.isCallExpression(node.expression)) {
+        const innerName = calleeName(node.expression.expression);
+        const innerRoot = innerName.split(".")[0];
+        if (innerName.endsWith(".each") && (TEST_BLOCK_ROOTS.has(innerRoot) || SUITE_ROOTS.has(innerRoot))) {
+          const title = node.arguments[0];
+          if (title && ts.isStringLiteral(title) && !title.text.includes("%")) {
+            push(lineOf(sf, node), "D4", "each cases are not titled");
           }
         }
       }

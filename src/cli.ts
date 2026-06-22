@@ -14,6 +14,7 @@ Usage:
   falsegreen-js [paths...]        files/dirs; no args = scan cwd
   falsegreen-js --staged          only test files staged in git
   falsegreen-js --json            JSON output
+  falsegreen-js --diagnostics     also report the opt-in maintainability group (D*/M*)
   falsegreen-js --disable C7,JS3  turn off specific codes
   falsegreen-js --version
   falsegreen-js --help
@@ -24,12 +25,13 @@ Covers: .js .jsx .ts .tsx .mjs .cjs .mts .cts`;
 
 function parseArgs(argv: string[]) {
   const paths: string[] = [];
-  let json = false, staged = false, help = false, version = false;
+  let json = false, staged = false, help = false, version = false, diagnostics = false;
   const disable = new Set<string>();
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === "--json") json = true;
     else if (a === "--staged") staged = true;
+    else if (a === "--diagnostics") diagnostics = true;
     else if (a === "--help" || a === "-h") help = true;
     else if (a === "--version" || a === "-V") version = true;
     else if (a === "--disable") {
@@ -43,7 +45,7 @@ function parseArgs(argv: string[]) {
       process.exit(2);
     } else paths.push(a);
   }
-  return { paths, json, staged, help, version, disable };
+  return { paths, json, staged, help, version, diagnostics, disable };
 }
 
 function exitCode(findings: Finding[]): number {
@@ -79,7 +81,7 @@ function main(): void {
   if (opt.version) { process.stdout.write(VERSION + "\n"); process.exit(0); }
 
   const config = loadConfig();
-  const scanOpts: ScanOptions = { config, cliDisable: opt.disable };
+  const scanOpts: ScanOptions = { config, cliDisable: opt.disable, diagnostics: opt.diagnostics };
 
   let findings: Finding[];
   if (opt.staged) {

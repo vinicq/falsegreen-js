@@ -66,9 +66,11 @@ line up in the research. `JS*` codes are ecosystem-specific.
 | C5  | high | always-true check (`expect(true).toBe(true)`, `assert(1)`) |
 | C7  | high | compares a thing to itself (`expect(x).toBe(x)`) |
 | C8  | low  | exact equality on a float (use `toBeCloseTo`) |
+| C9  | low  | `toThrow()` with no error type or message — accepts any error |
 | C16 | low  | result depends on `Date.now`, `Math.random`, or a fixed timer |
 | C18 | low  | compares `String(x)` / `JSON.stringify(x)` / `` `${x}` `` to a literal (formatting, not value) |
 | C21 | low  | every assertion is conditional — none runs unconditionally |
+| C37 | low  | duplicate case in `it.each`/`test.each` — the same scenario runs twice |
 | CC  | low  | commented-out assertion |
 | JS1 | high | focused test (`it.only` / `fit`) silently skips the rest of the suite |
 | JS2 | high | `expect(x)` with no matcher — the assertion never runs |
@@ -79,9 +81,29 @@ line up in the research. `JS*` codes are ecosystem-specific.
 | JS7 | low  | assertion inside a non-awaited `setTimeout`/`then` callback — may run after the test ends |
 | JS9 | high | assertion in a dead branch (`if(false)` / `if(true){}else`) — never runs |
 | JS11 | low | `try/catch` swallows the assertion — a failing `expect` is caught, test stays green |
+| JS13 | low | query (`getBy*`/`queryBy*`) as a loose statement — its result is never asserted |
 
 Each code carries a judgment tag (J1-J6) shared with the
 [falsegreen-skill](https://github.com/vinicq/falsegreen-skill) semantic framework.
+
+### Opt-in: maintainability group (default off)
+
+These are **not** false-green — the test still protects something — so they are off by
+default. Enable them with `--diagnostics`, or per code via config `severity`. They are a
+"plus" for test-code health, mirroring falsegreen's diagnostic/coupling groups.
+
+| Code | Group | What it flags |
+|---|---|---|
+| D1 | diagnostic | assertion roulette — many assertions in one test |
+| D3 | diagnostic | duplicate assert — the same assertion repeated |
+| D4 | diagnostic | `it.each`/`test.each` without titled cases (index-only) |
+| D6 | diagnostic | `console.*` in a test body |
+| D7 | diagnostic | anonymous test — empty or missing description |
+| M2 | coupling | test body exceeds the line-count threshold |
+
+```bash
+npx falsegreen-js --diagnostics      # include D*/M* as warnings
+```
 
 ### Roadmap (researched, not yet active)
 

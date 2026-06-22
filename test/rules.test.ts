@@ -110,6 +110,29 @@ describe("falsegreen-js rules", () => {
     expect(codes(src)).not.toContain("CC");
   });
 
+  it("C9: toThrow without an error type or message", () => {
+    expect(codes(`test("x", () => { expect(() => run()).toThrow(); });`)).toContain("C9");
+  });
+
+  it("C37: duplicate case in it.each", () => {
+    const src = `it.each([[1, 2], [1, 2]])("adds %i", (a, b) => { expect(a).toBe(b); });`;
+    expect(codes(src)).toContain("C37");
+  });
+
+  it("JS13: loose RTL query never asserted", () => {
+    expect(codes(`test("x", () => { screen.getByText("Save"); });`)).toContain("JS13");
+  });
+
+  it("diagnostic group is emitted by analyze (D1/D3/D6/D7/M2)", () => {
+    expect(codes(`test("", () => { console.log(1); expect(a).toBe(1); expect(a).toBe(1); });`))
+      .toEqual(expect.arrayContaining(["D7", "D6", "D3"]));
+  });
+
+  it("D4: it.each without titled cases", () => {
+    const src = `it.each([[1], [2]])("runs", (a) => { expect(a).toBeDefined(); });`;
+    expect(codes(src)).toContain("D4");
+  });
+
   it("clean test produces no findings", () => {
     const src = `test("adds", () => { expect(add(2, 3)).toBe(5); });`;
     expect(codes(src)).toEqual([]);
