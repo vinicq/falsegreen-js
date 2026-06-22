@@ -7,9 +7,10 @@ All notable changes to this project are documented here. The format is based on
 ## [Unreleased]
 
 ### Fixed
-- Test-file discovery now matches Cypress `.cy.{js,ts,jsx,tsx}` files (and the
-  `cypress`/`e2e` directories). Previously only `.test`/`.spec` were discovered, so
-  Cypress specs were silently skipped.
+- Test-file discovery now matches more JS/TS naming conventions: Cypress `.cy.*`,
+  Deno/Go `_test.*`, Jasmine `*Spec.*`, Angular/Protractor `.e2e-spec.*`, and `.e2e.*`
+  (plus the `cypress`/`e2e` directories). Previously only `.test`/`.spec` were
+  discovered, so Cypress/Deno/Jasmine/Angular specs were silently skipped.
 
 ### Added
 - Vue/Svelte test-utils coverage: JS5 now flags non-awaited `flushPromises`/`nextTick`/

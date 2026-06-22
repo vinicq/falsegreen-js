@@ -166,11 +166,16 @@ describe("falsegreen-js rules", () => {
     expect(codes(`test("x", () => { items.find(i => i.id === 1); expect(items).toHaveLength(2); });`)).not.toContain("JS13");
   });
 
-  it("discovers Cypress .cy files and standard test files", () => {
-    expect(isTestFile("cypress/e2e/login.cy.ts")).toBe(true);
+  it("discovers test files across JS/TS naming conventions", () => {
+    expect(isTestFile("cypress/e2e/login.cy.ts")).toBe(true);   // Cypress
     expect(isTestFile("src/Button.cy.tsx")).toBe(true);
-    expect(isTestFile("tests/auth.spec.ts")).toBe(true);
-    expect(isTestFile("src/utils.ts")).toBe(false);
+    expect(isTestFile("tests/auth.spec.ts")).toBe(true);        // Jest/Vitest/Playwright
+    expect(isTestFile("src/mod_test.ts")).toBe(true);           // Deno
+    expect(isTestFile("src/userSpec.js")).toBe(true);           // Jasmine
+    expect(isTestFile("e2e/checkout.e2e-spec.ts")).toBe(true);  // Angular/Protractor
+    expect(isTestFile("app.e2e.ts")).toBe(true);                // WebdriverIO
+    expect(isTestFile("src/utils.ts")).toBe(false);             // not a test
+    expect(isTestFile("src/respec.ts")).toBe(false);            // not a false match
   });
 
   it("clean test produces no findings", () => {
