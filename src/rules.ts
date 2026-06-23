@@ -175,6 +175,24 @@ function expectChain(call: ts.CallExpression): ExpectChain | null {
   return null;
 }
 
+/** True if a call's result is observed: awaited, returned, assigned, or the
+ *  implicit-return body of an arrow. A bare floating call (its enclosing
+ *  statement is a plain ExpressionStatement) is NOT observed. Used to gate
+ *  supertest `.expect()` so a floating API request still surfaces as C2b. */
+function isObservedAsync(node: ts.Node): boolean {
+  let cur: ts.Node = node;
+  let p: ts.Node | undefined = node.parent;
+  while (p) {
+    if (ts.isAwaitExpression(p) || ts.isReturnStatement(p)) return true;
+    if (ts.isVariableDeclaration(p) || ts.isBinaryExpression(p)) return true;
+    if (ts.isArrowFunction(p) && p.body === cur) return true;
+    if (ts.isExpressionStatement(p)) return false;
+    cur = p;
+    p = p.parent;
+  }
+  return false;
+}
+
 // --- assertion presence ----------------------------------------------------
 function isAssertionNode(node: ts.Node): boolean {
   if (ts.isCallExpression(node)) {
@@ -185,8 +203,11 @@ function isAssertionNode(node: ts.Node): boolean {
     // expect(x).matcher(...) — Jest, Vitest, Jasmine, Playwright, jest-dom, chai expect
     if (root === "expect" && ts.isPropertyAccessExpression(node.expression)) return true;
     // <chain>.expect(...) — supertest / chai-http API tests: request(app).get("/").expect(200)
-    // is the assertion (it throws on mismatch). Distinct from the bare global expect(x).
-    if (ts.isPropertyAccessExpression(node.expression) && node.expression.name.text === "expect") return true;
+    // is the assertion (it throws on mismatch), but only when the request is awaited or
+    // returned. A floating `request(app).get("/").expect(200);` can finish after the test
+    // ends, so it stays uncovered (C2b) instead of scanning clean.
+    if (ts.isPropertyAccessExpression(node.expression) && node.expression.name.text === "expect"
+        && isObservedAsync(node)) return true;
     if (root === "assert") return true;            // node:test, chai assert
     if (root === "sinon" && name.includes("assert")) return true;
     // AVA (t.is), node:test/tap (t.ok), Cypress (cy....should), QUnit
@@ -582,15 +603,23 @@ export function analyze(sf: ts.SourceFile): Finding[] {
         }
       }
 
+      // A runner `.each` table: it.each / test.each / describe.each (and fit/xit
+      // variants). Gate the each-table codes on a runner root so a plain helper
+      // like `_.each([], fn)` or `lodash.each([])` is never mistaken for a test table.
+      const eachRoot = name.split(".")[0];
+      const isRunnerEach = name.endsWith(".each") &&
+        (TEST_BLOCK_ROOTS.has(eachRoot) || SUITE_ROOTS.has(eachRoot) ||
+         eachRoot === "fit" || eachRoot === "xit");
+
       // JS22: empty it.each/test.each table — zero cases are generated, so the
       // test is collected but never runs and the suite stays green.
-      if (name.endsWith(".each") && node.arguments.length > 0 &&
+      if (isRunnerEach && node.arguments.length > 0 &&
           ts.isArrayLiteralExpression(node.arguments[0]) && node.arguments[0].elements.length === 0) {
         push(lineOf(sf, node), "JS22", "empty .each table — the test runs zero times");
       }
 
       // C37: duplicate case in it.each/test.each table
-      if (name.endsWith(".each") && node.arguments.length > 0 && ts.isArrayLiteralExpression(node.arguments[0])) {
+      if (isRunnerEach && node.arguments.length > 0 && ts.isArrayLiteralExpression(node.arguments[0])) {
         const seen = new Set<string>();
         for (const el of node.arguments[0].elements) {
           const t = el.getText(sf).replace(/\s+/g, " ").trim();

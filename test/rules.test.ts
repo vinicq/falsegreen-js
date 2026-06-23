@@ -271,6 +271,21 @@ describe("falsegreen-js rules", () => {
     expect(codes(src)).not.toContain("C2b");
   });
 
+  it("recognizes a returned supertest chain (implicit-return arrow)", () => {
+    const src = `test("GET /users", () => request(app).get("/users").expect(200));`;
+    expect(codes(src)).not.toContain("C2b");
+  });
+
+  it("still flags a floating (non-awaited) supertest request as C2b", () => {
+    const src = `test("GET /users", () => { request(app).get("/users").expect(200); });`;
+    expect(codes(src)).toContain("C2b");
+  });
+
+  it("does not flag JS22 for a plain helper .each over an empty array", () => {
+    const src = `test("x", () => { _.each([], fn); expect(run()).toBe(1); });`;
+    expect(codes(src)).not.toContain("JS22");
+  });
+
   it("clean test produces no findings", () => {
     const src = `test("greets", () => { expect(greet("Ana")).toBe("hello Ana"); });`;
     expect(codes(src)).toEqual([]);
