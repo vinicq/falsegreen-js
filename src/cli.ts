@@ -7,6 +7,7 @@ import { JUDGMENTS, CASES, groupOf, FIX_HINTS } from "./cases.js";
 import {
   scanPaths, scanFile, stagedFiles, loadConfig, ScanOptions,
 } from "./scan.js";
+import { auditConfig } from "./audit.js";
 
 const VERSION = "0.2.0";
 const TOOL_URI = "https://github.com/vinicq/falsegreen-js";
@@ -18,6 +19,7 @@ Usage:
   falsegreen-js --staged          only test files staged in git
   falsegreen-js --json            JSON output
   falsegreen-js --output PATH     write to a file, or report.<ext> into a directory
+  falsegreen-js --config-audit    audit Jest/Vitest config (project-layer PL codes)
   falsegreen-js --diagnostics     also report the opt-in maintainability group (D*/M*)
   falsegreen-js --disable C7,JS3  turn off specific codes
   falsegreen-js --version
@@ -32,12 +34,14 @@ Covers: .js .jsx .ts .tsx .mjs .cjs .mts .cts`;
 function parseArgs(argv: string[]) {
   const paths: string[] = [];
   let json = false, staged = false, help = false, version = false, diagnostics = false;
+  let configAudit = false;
   let output: string | undefined;
   const disable = new Set<string>();
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === "--json") json = true;
     else if (a === "--staged") staged = true;
+    else if (a === "--config-audit") configAudit = true;
     else if (a === "--diagnostics") diagnostics = true;
     else if (a === "--help" || a === "-h") help = true;
     else if (a === "--version" || a === "-V") version = true;
@@ -54,7 +58,7 @@ function parseArgs(argv: string[]) {
       process.exit(2);
     } else paths.push(a);
   }
-  return { paths, json, staged, help, version, diagnostics, disable, output };
+  return { paths, json, staged, help, version, diagnostics, configAudit, disable, output };
 }
 
 /** Turn --output into a concrete file path. A directory (existing dir, a
@@ -129,6 +133,20 @@ function main(): void {
   const opt = parseArgs(process.argv.slice(2));
   if (opt.help) { process.stdout.write(HELP + "\n"); process.exit(0); }
   if (opt.version) { process.stdout.write(VERSION + "\n"); process.exit(0); }
+
+  if (opt.configAudit) {
+    const base = opt.paths.find((p) => { try { return fs.statSync(p).isDirectory(); } catch { return false; } }) ?? ".";
+    const findings = auditConfig(base);
+    const rendered = opt.json
+      ? JSON.stringify({
+          tool: "falsegreen-js", version: VERSION, judgments: JUDGMENTS,
+          findings: findings.map((f) => ({ ...f, group: groupOf(f.code), fix: FIX_HINTS[f.code] ?? "" })),
+        }, null, 2)
+      : renderText(findings);
+    if (opt.output) fs.writeFileSync(resolveOutputPath(opt.output, opt.json ? "json" : "text"), rendered + "\n");
+    else process.stdout.write(rendered + "\n");
+    process.exit(findings.length ? 10 : 0);
+  }
 
   const config = loadConfig();
   const scanOpts: ScanOptions = { config, cliDisable: opt.disable, diagnostics: opt.diagnostics };
