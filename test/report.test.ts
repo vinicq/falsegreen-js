@@ -7,7 +7,8 @@ import { detectPyramidLevel } from "../src/level.js";
 import { scanFile } from "../src/scan.js";
 import { CASES, FIX_HINTS } from "../src/cases.js";
 import { makeFinding } from "../src/types.js";
-import { renderText, resolveOutputPath } from "../src/cli.js";
+import { pathToFileURL } from "node:url";
+import { renderText, resolveOutputPath, isDirectRun } from "../src/cli.js";
 
 function level(src: string, file = "x.test.ts"): string {
   return detectPyramidLevel(parse(file, src));
@@ -101,6 +102,37 @@ describe("resolveOutputPath", () => {
     const dest = resolveOutputPath(target, "text");
     expect(dest).toBe(target);
     expect(fs.existsSync(path.dirname(dest))).toBe(true); // parent created
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+});
+
+describe("isDirectRun (bin symlink guard)", () => {
+  it("is false when there is no entry path", () => {
+    expect(isDirectRun(undefined, "file:///x.js")).toBe(false);
+  });
+
+  it("matches the real file path", () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "fgjs-run-"));
+    const real = path.join(dir, "cli.js");
+    fs.writeFileSync(real, "// entry");
+    expect(isDirectRun(real, pathToFileURL(fs.realpathSync(real)).href)).toBe(true);
+    expect(isDirectRun(real, "file:///somewhere/else.js")).toBe(false);
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("resolves a bin symlink to the real module URL (the regression)", () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "fgjs-run-"));
+    const real = path.join(dir, "cli.js");
+    fs.writeFileSync(real, "// entry");
+    const link = path.join(dir, "falsegreen-js");
+    let supported = true;
+    try { fs.symlinkSync(real, link); } catch { supported = false; } // Windows may forbid
+    const moduleUrl = pathToFileURL(real).href;
+    // argv[1] is the symlink while import.meta.url is the real path: realpath
+    // resolution must still match. Where symlinks are unsupported, the raw path
+    // matches directly, so the assertion runs unconditionally either way.
+    const argv1 = supported ? link : real;
+    expect(isDirectRun(argv1, moduleUrl)).toBe(true);
     fs.rmSync(dir, { recursive: true, force: true });
   });
 });

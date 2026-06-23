@@ -160,8 +160,19 @@ function main(): void {
   process.exit(exitCode(findings));
 }
 
+/** True when this module is the process entry point. Package managers expose the
+ * `bin` through a symlink (node_modules/.bin/falsegreen-js), so process.argv[1]
+ * is the symlink while import.meta.url is the real dist/cli.js path; resolve the
+ * realpath before comparing, or `npx falsegreen-js` would exit without scanning. */
+export function isDirectRun(invokedPath: string | undefined, moduleUrl: string): boolean {
+  if (!invokedPath) return false;
+  let resolved = invokedPath;
+  try { resolved = fs.realpathSync(invokedPath); } catch { /* keep raw path */ }
+  return moduleUrl === pathToFileURL(resolved).href;
+}
+
 // Run only when invoked as the CLI, so the module can be imported in tests
 // without triggering a scan and process.exit.
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+if (isDirectRun(process.argv[1], import.meta.url)) {
   main();
 }
