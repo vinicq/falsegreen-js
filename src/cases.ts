@@ -69,19 +69,28 @@ export const CASES: Record<string, CaseDef> = {
   D7: { title: "anonymous test — empty or missing description", confidence: "off", judgment: "J4" },
   D8: { title: "magic number in an assertion — a bare numeric literal instead of a named constant", confidence: "off", judgment: "J4" },
   M2: { title: "test body exceeds the line-count threshold — hard to read and maintain", confidence: "off", judgment: "J5" },
+
+  // --- project layer (config-audit only; emitted by --config-audit, never by
+  // the per-file scan). The suite goes green by configuration, not by a smell
+  // inside any one test file. ------------------------------------------------
+  PL7:  { title: "no coverage gate (coverageThreshold / coverage.thresholds) - coverage can fall to zero and the suite still passes", confidence: "low", judgment: "J5" },
+  PL8:  { title: "bail stops the run early (bail) - the reported test count is incomplete", confidence: "low", judgment: "J5" },
+  PL10: { title: "passWithNoTests lets an empty or fully-filtered suite report green", confidence: "low", judgment: "J1" },
 };
 
 /** Default thresholds for the diagnostic group (overridable later via config). */
 export const DIAGNOSTIC_THRESHOLDS = { assertionRoulette: 5, longTest: 50 };
 
-export function groupOf(code: string): "false-positive" | "diagnostic" | "coupling" {
+export function groupOf(code: string): "false-positive" | "diagnostic" | "coupling" | "project" {
+  if (code.startsWith("PL")) return "project";
   if (code.startsWith("D")) return "diagnostic";
   if (code.startsWith("M")) return "coupling";
   return "false-positive";
 }
 
-/** Test-pyramid level, detected from a file's import roots (see level.ts). */
-export type PyramidLevel = "unit" | "integration" | "e2e";
+/** Test-pyramid level, detected from a file's import roots (see level.ts).
+ * `project` is the config-audit layer (--config-audit), not a file level. */
+export type PyramidLevel = "unit" | "integration" | "e2e" | "project";
 
 /**
  * One-line remediation per case: what to change so the test protects something.
@@ -126,4 +135,7 @@ export const FIX_HINTS: Record<string, string> = {
   D7: "give the test a description",
   D8: "name the magic number with a constant",
   M2: "split the long test into focused cases",
+  PL7:  "set coverageThreshold (Jest) or coverage.thresholds (Vitest) to gate coverage",
+  PL8:  "remove bail so the whole suite runs and the count is complete",
+  PL10: "drop passWithNoTests so an empty or filtered-to-nothing run fails",
 };

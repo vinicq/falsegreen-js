@@ -30,10 +30,15 @@ npx falsegreen-js --staged        # only test files staged in git (pre-commit)
 npx falsegreen-js --json          # machine-readable output
 npx falsegreen-js --output report.json   # write to a file
 npx falsegreen-js --output .falsegreen/  # write report.<ext> into a directory
+npx falsegreen-js --config-audit  # audit Jest/Vitest config (project-layer PL codes)
 npx falsegreen-js --disable C7,JS3
 ```
 
 Each finding is reported with its pyramid level (unit / integration / e2e, read from the file's imports) and a one-line fix hint, and the summary breaks the findings down by level and lists the most common fixes. `--output` takes a file or a directory: an extension-less or trailing-slash path (e.g. `.falsegreen/`) receives `report.<ext>` for the chosen format. Reports are run artifacts; keep the output directory gitignored.
+
+`--config-audit` is a separate mode: instead of scanning test files, it reads the Jest/Vitest config (`package.json` `jest` field, `jest.config.*`, `vitest.config.*`) and reports the project-layer ways a suite stays green by configuration: `PL10` (`passWithNoTests` passes an empty or filtered-to-nothing run), `PL7` (no `coverageThreshold` / `coverage.thresholds`), `PL8` (`bail` stops the run early). The per-file scan cannot see config.
+
+For the layer no static scan reaches (does a green test fail when the code is wrong?), run a **mutation tester** like [Stryker](https://stryker-mutator.io/). falsegreen-js is the cheap pre-filter on every commit; mutation testing is the deeper audit.
 
 Exit code: `0` clean, `10` low-confidence only, `20` high-confidence present. Wire it
 into CI or a pre-commit hook and let exit `20` block the commit.
