@@ -74,5 +74,5 @@ code. React production-code smells are out of scope on purpose: this is a test-f
 ## Siblings
 
 [falsegreen](https://github.com/vinicq/falsegreen) (Python, `ast`, zero-dependency) and
-[falsegreen-robot](https://github.com/vinicq/falsegreen-robot) (Robot Framework,
+[robotframework-falsegreen](https://github.com/vinicq/robotframework-falsegreen) (Robot Framework,
 `robot.api`). Same false-green idea, different parser per language.
