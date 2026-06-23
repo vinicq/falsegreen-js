@@ -7,6 +7,14 @@ All notable changes to this project are documented here. The format is based on
 ## [Unreleased]
 
 ### Added
+- New codes: JS21 (matcher referenced but never called, `expect(x).toBe` with no `()`),
+  JS22 (empty `it.each`/`test.each` table), JS17 (commented-out test block), JS18 (`done`
+  callback instead of async/await).
+- supertest / chai-http `.expect()` is recognized as an assertion, so API integration tests
+  built with `request(app).get(...).expect(200)` are no longer flagged C2b.
+- Documented test-pyramid coverage: unit, integration (API and database), and E2E.
+
+### Added
 - Cross-language parity with the Python scanner: C6 (weak check — toBeTruthy/toBeDefined/length>0),
   C20 (assertion in dead code after return/throw), C23 (mystery guest — real file at a literal
   path / hard-coded URL), and JS8 (mocks the unit under test and asserts it directly).

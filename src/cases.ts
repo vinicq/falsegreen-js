@@ -54,6 +54,10 @@ export const CASES: Record<string, CaseDef> = {
   JS11: { title: "try/catch swallows the assertion — a failing expect is caught and the test stays green", confidence: "low", judgment: "J1" },
   JS13: { title: "query (getBy*/queryBy*/wrapper.find) as a loose statement — its result is never asserted", confidence: "low", judgment: "J4" },
   JS15: { title: "inappropriate assertion — the comparison is wrapped in a boolean (expect(a===b).toBe(true)), so the failure message is blind", confidence: "low", judgment: "J4" },
+  JS17: { title: "commented-out test block (// it(...) / // test(...)) — a disabled test that no longer runs", confidence: "low", judgment: "J1" },
+  JS18: { title: "test takes a done callback instead of async/await — a done called too early (or in a floating promise) passes before the assertions run", confidence: "low", judgment: "J1" },
+  JS21: { title: "matcher referenced but never called (expect(x).toBe with no ()) — the assertion never executes", confidence: "high", judgment: "J1" },
+  JS22: { title: "empty it.each/test.each table — the test is generated with zero cases and never runs", confidence: "high", judgment: "J1" },
 
   // --- diagnostic group (maintainability; default off, opt-in via --diagnostics
   // or config severity). These are NOT false-green: the test still protects. They
