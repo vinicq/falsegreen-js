@@ -28,8 +28,12 @@ npx falsegreen-js                 # scan cwd
 npx falsegreen-js src test        # scan paths
 npx falsegreen-js --staged        # only test files staged in git (pre-commit)
 npx falsegreen-js --json          # machine-readable output
+npx falsegreen-js --output report.json   # write to a file
+npx falsegreen-js --output .falsegreen/  # write report.<ext> into a directory
 npx falsegreen-js --disable C7,JS3
 ```
+
+Each finding is reported with its pyramid level (unit / integration / e2e, read from the file's imports) and a one-line fix hint, and the summary breaks the findings down by level and lists the most common fixes. `--output` takes a file or a directory: an extension-less or trailing-slash path (e.g. `.falsegreen/`) receives `report.<ext>` for the chosen format. Reports are run artifacts; keep the output directory gitignored.
 
 Exit code: `0` clean, `10` low-confidence only, `20` high-confidence present. Wire it
 into CI or a pre-commit hook and let exit `20` block the commit.

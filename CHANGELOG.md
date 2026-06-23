@@ -13,6 +13,11 @@ All notable changes to this project are documented here. The format is based on
 - supertest / chai-http `.expect()` is recognized as an assertion, so API integration tests
   built with `request(app).get(...).expect(200)` are no longer flagged C2b.
 - Documented test-pyramid coverage: unit, integration (API and database), and E2E.
+- Status report output: every finding now carries its pyramid level (unit / integration /
+  e2e, detected from the file's import roots) and a one-line fix hint. The text summary adds
+  a per-level breakdown and the top fixes by frequency; JSON gains `level` and `fix` fields.
+- `--output` flag: write to a file, or pass a directory (e.g. `.falsegreen/`) to get
+  `report.<ext>` for the chosen format. Parent directories are created as needed.
 
 ### Added
 - Cross-language parity with the Python scanner: C6 (weak check — toBeTruthy/toBeDefined/length>0),

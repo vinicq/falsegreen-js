@@ -1,4 +1,4 @@
-import { CASES, Confidence } from "./cases.js";
+import { CASES, Confidence, PyramidLevel } from "./cases.js";
 
 export interface Finding {
   file: string;
@@ -7,6 +7,7 @@ export interface Finding {
   detail: string;
   confidence: Confidence;
   title: string;
+  level: PyramidLevel; // unit | integration | e2e; set per file in scanFile
 }
 
 export function makeFinding(
@@ -23,5 +24,6 @@ export function makeFinding(
     detail,
     confidence: confidence ?? CASES[code].confidence,
     title: CASES[code].title,
+    level: "unit",
   };
 }

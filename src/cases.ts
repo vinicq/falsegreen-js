@@ -79,3 +79,51 @@ export function groupOf(code: string): "false-positive" | "diagnostic" | "coupli
   if (code.startsWith("M")) return "coupling";
   return "false-positive";
 }
+
+/** Test-pyramid level, detected from a file's import roots (see level.ts). */
+export type PyramidLevel = "unit" | "integration" | "e2e";
+
+/**
+ * One-line remediation per case: what to change so the test protects something.
+ * Short, imperative, no trailing period. Surfaced in the status report (text +
+ * JSON `fix` field). A code missing here renders no fix line, never throws.
+ */
+export const FIX_HINTS: Record<string, string> = {
+  C2:  "add an assertion that checks the behaviour under test",
+  C2b: "assert the result of the call, not just that it ran",
+  C5:  "assert the real behaviour, not a constant or tautology",
+  C6:  "assert the actual value, not just that something came back",
+  C7:  "compare against an independent expected value, not the subject itself",
+  C20: "move the assertion before the return/throw so it runs",
+  C23: "use a fixture or temp file instead of a real path or hard-coded URL",
+  C8:  "use toBeCloseTo() or a tolerance instead of exact float equality",
+  C16: "freeze time and seed randomness so the result is deterministic",
+  C18: "assert the value, not its String()/JSON.stringify() form",
+  C21: "add at least one assertion that runs unconditionally",
+  C9:  "pass an error type or message to toThrow()",
+  C37: "remove the duplicate it.each/test.each case",
+  CC:  "restore the commented-out assertion, or delete it",
+  JS1: "remove .only (it.only/fit/describe.only) so the whole suite runs",
+  JS2: "add a matcher (expect(x).toBe(...)) so the assertion runs",
+  JS3: "add a real assertion; don't rely only on a self-generated snapshot",
+  JS4: "remove .skip/xit/todo, or implement the test",
+  JS5: "await the async query/event before asserting",
+  JS6: "add tests to the describe block, or remove it",
+  JS7: "await the promise/timer, or assert synchronously",
+  JS8: "unmock the unit under test; mock only its collaborators",
+  JS9: "remove the dead branch so the assertion runs",
+  JS11: "let the assertion error propagate; don't catch it",
+  JS13: "assert on the query result, not just query it",
+  JS15: "expect the value directly (expect(a).toBe(b)), not a boolean",
+  JS17: "restore the commented-out test, or delete it",
+  JS18: "use async/await instead of the done callback",
+  JS21: "call the matcher (add ()) so the assertion executes",
+  JS22: "add at least one row to the it.each/test.each table",
+  D1: "give each assertion a message, or split the test",
+  D3: "remove the duplicate assertion",
+  D4: "add titled cases to it.each/test.each",
+  D6: "remove console.* or replace it with an assertion",
+  D7: "give the test a description",
+  D8: "name the magic number with a constant",
+  M2: "split the long test into focused cases",
+};
