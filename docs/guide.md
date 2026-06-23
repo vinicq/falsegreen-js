@@ -145,6 +145,46 @@ try { expect(a).toBe(b); } catch (e) {}      // flagged: a failing expect is cau
 Clean: the assertion is in the `catch` (testing an error), or the catch re-throws / calls
 `fail()`.
 
+## JS17 — commented-out test block (low, J1)
+
+```ts
+// it("logs in", () => { expect(login()).toBe(true); });   // flagged
+```
+A disabled test that no longer runs and no longer shows up as skipped. Also matches
+`it.skip`/`it.only`/`it.each` in a comment. Restore it or delete it.
+
+## JS18 — done callback instead of async/await (low, J1)
+
+```ts
+it("loads", (done) => { fetchData().then((d) => { expect(d).toBe(1); done(); }); }); // flagged
+```
+A `done` called too early, or inside a floating promise, lets the test pass before the
+assertions run. Clean: make the test `async` and `await` the work.
+
+## JS21 — matcher referenced but never called (high, J1)
+
+```ts
+expect(user.name).toBe;                       // flagged: no (), the matcher never runs
+```
+The assertion object is built and dropped; nothing executes. Also fires through a
+`.resolves`/`.rejects` chain. Clean: call the matcher, `expect(user.name).toBe("Ana")`.
+
+## JS22 — empty it.each/test.each table (high, J1)
+
+```ts
+it.each([])("case %s", (n) => { expect(f(n)).toBe(n); });   // flagged: zero cases
+```
+An empty table generates no cases, so the test is collected but never runs. Clean: populate
+the table, or remove the `.each`.
+
+---
+
+## A note on API tests
+
+`request(app).get("/users").expect(200)` (supertest / chai-http) is recognized as an
+assertion: `.expect()` throws on a mismatch, so an API integration test built this way is
+not mistaken for C2b (calls but checks nothing).
+
 ---
 
 ## Out of scope

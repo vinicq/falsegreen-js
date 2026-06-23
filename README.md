@@ -55,6 +55,25 @@ Note: component files (`.vue`, `.svelte`, `.astro`, `.marko`) and templates (`.h
 are not test files. Tests for those frameworks are written in `.spec`/`.test` files in
 the eight extensions above, which is what the scanner reads.
 
+## Test levels (the pyramid)
+
+falsegreen-js scans tests at every level of the pyramid. Discovery is level-agnostic - it
+reads any test file - but a few codes are read in light of the level, so a valid pattern at
+one level is not flagged at another.
+
+- **Unit:** a function or component with its boundaries doubled. The oracle is `expect`.
+- **Integration (API and database):** API tests through supertest / chai-http
+  (`request(app).get("/").expect(200)`, recognized as an assertion) or `fetch`, and database
+  tests through Prisma / TypeORM / Knex against a real datastore. These cross the I/O
+  boundary on purpose, so the response or row IS the verification at that level.
+- **E2E:** Cypress (`.cy.*`) and Playwright (`.e2e.*`). `cy.get().should(...)` and
+  `expect(page).toHaveURL(...)` are the oracle; a visible element is a real check here, not a
+  weak one.
+
+A real API or database call inside a test that claims to be a unit test is itself the smell
+(mystery guest, environment coupling), not the level of the test. C23 flags the hard-coded
+file path or URL form.
+
 ## Case catalog
 
 Codes shared with `falsegreen` (Python) keep the same id, so cross-language results
@@ -88,6 +107,10 @@ line up in the research. `JS*` codes are ecosystem-specific.
 | JS11 | low | `try/catch` swallows the assertion — a failing `expect` is caught, test stays green |
 | JS13 | low | query (`getBy*`/`queryBy*`) as a loose statement — its result is never asserted |
 | JS15 | low | inappropriate assertion — comparison wrapped in a boolean (`expect(a===b).toBe(true)`), blind failure message |
+| JS17 | low | commented-out test block (`// it(...)` / `// test(...)`) — disabled, no longer runs |
+| JS18 | low | test takes a `done` callback instead of async/await — a mistimed `done` passes early |
+| JS21 | high | matcher referenced but never called (`expect(x).toBe` with no `()`) — the assertion never runs |
+| JS22 | high | empty `it.each`/`test.each` table — generated with zero cases, never runs |
 
 Each code carries a judgment tag (J1-J6) shared with the
 [falsegreen-skill](https://github.com/vinicq/falsegreen-skill) semantic framework.
@@ -112,12 +135,19 @@ default. Enable them with `--diagnostics`, or per code via config `severity`. Th
 npx falsegreen-js --diagnostics      # include D*/M* as warnings
 ```
 
-### Roadmap (researched, not yet active)
+### Deliberately not implemented
 
-Tracked in the research hub, pending implementation: JS8 (mocking the unit under test),
-JS10 (async test with no `expect.assertions` and the assertion only in a `catch`), JS12
-(`render(<C/>)`/`mount()` with no query or assertion), JS13 (a `getBy*`/`queryBy*` query
-as a loose statement), and a general Mystery Guest / external-resource code.
+Some catalog codes were reviewed and left out, on purpose:
+
+- **JS19** (`toBe` on an object/array literal): `expect(x).toBe({...})` compares by reference,
+  so it always fails. That is a loud red test, the opposite of false-green, and out of scope.
+- **JS20** (a Promise compared without `resolves`/`rejects`): telling that a value is a
+  Promise needs type information the parser does not have, so it would be too noisy.
+- **JS12** (a floating promise whose `expect` is never returned): already covered by JS7.
+- **JS16** (`async` test with no `expect.assertions(n)`): the absence of a guard is not a
+  smell on its own; flagging it would fire on most async tests.
+- **JS10** (any conditional in a test body): handled by `eslint-plugin-jest`
+  (`no-conditional-in-test`); JS9 and C21 already cover the false-green subset.
 
 ### What carries over from falsegreen, what does not
 
