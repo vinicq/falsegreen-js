@@ -228,6 +228,49 @@ describe("falsegreen-js rules", () => {
     expect(codes(src)).not.toContain("JS8");
   });
 
+  // --- codes added from the consolidated catalog (Lote 1 + Lote 2) ---------
+
+  it("JS21: matcher referenced but never called", () => {
+    expect(codes(`test("x", () => { expect(user.name).toBe; });`)).toContain("JS21");
+  });
+
+  it("JS21: fires through a .resolves chain", () => {
+    expect(codes(`test("x", async () => { expect(p()).resolves.toBeDefined; });`)).toContain("JS21");
+  });
+
+  it("does not flag JS21 when the matcher is called", () => {
+    expect(codes(`test("x", () => { expect(user.name).toBe("Ana"); });`)).not.toContain("JS21");
+  });
+
+  it("JS22: empty it.each table", () => {
+    expect(codes(`it.each([])("case %s", (n) => { expect(f(n)).toBe(n); });`)).toContain("JS22");
+  });
+
+  it("does not flag JS22 when the each table has rows", () => {
+    expect(codes(`it.each([1,2])("case %s", (n) => { expect(f(n)).toBe(n); });`)).not.toContain("JS22");
+  });
+
+  it("JS17: commented-out test block", () => {
+    expect(codes(`// it("logs in", () => { expect(login()).toBe(true); });`)).toContain("JS17");
+  });
+
+  it("JS17: commented-out it.skip is still flagged", () => {
+    expect(codes(`// it.skip("later", () => {});`)).toContain("JS17");
+  });
+
+  it("JS18: done callback instead of async/await", () => {
+    expect(codes(`it("x", (done) => { expect(v).toBe(1); done(); });`)).toContain("JS18");
+  });
+
+  it("does not flag JS18 for a normal callback", () => {
+    expect(codes(`it("x", () => { expect(v).toBe(1); });`)).not.toContain("JS18");
+  });
+
+  it("recognizes supertest .expect() as an assertion (API integration, no C2b)", () => {
+    const src = `test("GET /users", async () => { await request(app).get("/users").expect(200); });`;
+    expect(codes(src)).not.toContain("C2b");
+  });
+
   it("clean test produces no findings", () => {
     const src = `test("greets", () => { expect(greet("Ana")).toBe("hello Ana"); });`;
     expect(codes(src)).toEqual([]);

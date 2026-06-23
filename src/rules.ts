@@ -58,6 +58,25 @@ function rootIdent(e: ts.Expression | undefined): string | null {
   return null;
 }
 
+/** True if the expression chain bottoms out in an `expect(...)` call, walking
+ *  through property access, calls, `.not`/`.resolves`/`.rejects`, and wrappers. */
+function expectRooted(e: ts.Expression | undefined): boolean {
+  let cur: ts.Expression | undefined = e;
+  while (cur) {
+    if (ts.isCallExpression(cur) && ts.isIdentifier(cur.expression) && cur.expression.text === "expect") {
+      return true;
+    }
+    if (ts.isPropertyAccessExpression(cur) || ts.isCallExpression(cur) || ts.isElementAccessExpression(cur)) {
+      cur = cur.expression;
+    } else if (ts.isParenthesizedExpression(cur) || ts.isNonNullExpression(cur)) {
+      cur = cur.expression;
+    } else {
+      return false;
+    }
+  }
+  return false;
+}
+
 function literalTruthiness(e: ts.Expression | undefined): boolean | null {
   if (!e) return null;
   if (e.kind === ts.SyntaxKind.TrueKeyword) return true;
@@ -165,6 +184,9 @@ function isAssertionNode(node: ts.Node): boolean {
     const leaf = parts[parts.length - 1];
     // expect(x).matcher(...) — Jest, Vitest, Jasmine, Playwright, jest-dom, chai expect
     if (root === "expect" && ts.isPropertyAccessExpression(node.expression)) return true;
+    // <chain>.expect(...) — supertest / chai-http API tests: request(app).get("/").expect(200)
+    // is the assertion (it throws on mismatch). Distinct from the bare global expect(x).
+    if (ts.isPropertyAccessExpression(node.expression) && node.expression.name.text === "expect") return true;
     if (root === "assert") return true;            // node:test, chai assert
     if (root === "sinon" && name.includes("assert")) return true;
     // AVA (t.is), node:test/tap (t.ok), Cypress (cy....should), QUnit
@@ -324,6 +346,15 @@ export function analyze(sf: ts.SourceFile): Finding[] {
         ((TEST_BLOCK_ROOTS.has(root)) && (modifier === "only" || modifier === "skip" || modifier === "each"));
       if (isTestBlock) {
         const cb = getTestCallback(node);
+        // JS18: the test takes a `done` callback instead of async/await. A done
+        // called too early, or inside a floating promise, lets the test pass
+        // before the assertions run.
+        if (cb && cb.parameters.length > 0) {
+          const p0 = cb.parameters[0].name;
+          if (ts.isIdentifier(p0) && p0.text === "done") {
+            push(lineOf(sf, node), "JS18", "uses a done callback; prefer async/await");
+          }
+        }
         if (cb && cb.body && ts.isBlock(cb.body)) {
           const stmts = cb.body.statements;
           const line = lineOf(sf, node);
@@ -551,6 +582,13 @@ export function analyze(sf: ts.SourceFile): Finding[] {
         }
       }
 
+      // JS22: empty it.each/test.each table — zero cases are generated, so the
+      // test is collected but never runs and the suite stays green.
+      if (name.endsWith(".each") && node.arguments.length > 0 &&
+          ts.isArrayLiteralExpression(node.arguments[0]) && node.arguments[0].elements.length === 0) {
+        push(lineOf(sf, node), "JS22", "empty .each table — the test runs zero times");
+      }
+
       // C37: duplicate case in it.each/test.each table
       if (name.endsWith(".each") && node.arguments.length > 0 && ts.isArrayLiteralExpression(node.arguments[0])) {
         const seen = new Set<string>();
@@ -591,6 +629,18 @@ export function analyze(sf: ts.SourceFile): Finding[] {
       }
     }
 
+    // JS21: a matcher referenced but never called — `expect(x).toBe;` with no (),
+    // so the assertion object is built and dropped; nothing executes. The chain
+    // must be a bare statement (a call would make node.parent a CallExpression).
+    if (
+      ts.isPropertyAccessExpression(node) &&
+      node.name.text.startsWith("to") &&
+      ts.isExpressionStatement(node.parent) &&
+      expectRooted(node.expression)
+    ) {
+      push(lineOf(sf, node), "JS21", `${node.name.text} is referenced but never called`);
+    }
+
     ts.forEachChild(node, visit);
   };
 
@@ -613,8 +663,13 @@ export function analyze(sf: ts.SourceFile): Finding[] {
   // does not match JSDoc prose like ` * assert that ...`.
   const lines = text.split(/\r?\n/);
   const ccRe = /^\s*\/\/\s*(?:await\s+)?(?:expect\s*\(|assert(?:\.\w+)?\s*\(|[\w.]+\.should\b)/;
+  // JS17: a commented-out test block (// it('...', / // test(...) / // describe(...)),
+  // optionally with .skip/.only/.each. A disabled test that no longer runs and no
+  // longer shows up as skipped.
+  const js17Re = /^\s*\/\/\s*(?:it|test|describe|context|specify)(?:\.\w+)?\s*\(/;
   lines.forEach((ln, i) => {
     if (ccRe.test(ln)) push(i + 1, "CC", "assertion is commented out");
+    else if (js17Re.test(ln)) push(i + 1, "JS17", "test block is commented out");
   });
 
   return findings;
