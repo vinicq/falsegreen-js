@@ -53,8 +53,9 @@ describe("scanFile attaches the file level to each finding", () => {
     fs.writeFileSync(file, `import request from "supertest";\ntest("x", () => {});`);
     const findings = scanFile(file);
     fs.rmSync(dir, { recursive: true, force: true });
-    expect(findings.length).toBeGreaterThan(0);
-    expect(findings.every((f) => f.level === "integration")).toBe(true);
+    // the empty test body is C2; assert it is present and carries the file level
+    expect(findings.map((f) => f.code)).toContain("C2");
+    expect([...new Set(findings.map((f) => f.level))]).toEqual(["integration"]);
   });
 });
 
