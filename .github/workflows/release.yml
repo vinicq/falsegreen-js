@@ -42,6 +42,10 @@ jobs:
         if: github.event_name == 'release'
         run: test "v$(node -p "require('./package.json').version")" = "${{ github.ref_name }}"
       - name: Publish to npm (skip if the version is already published)
+        env:
+          # npm Automation token (Settings -> secrets -> NPM_TOKEN). Token auth is
+          # the reliable path; --provenance still attaches OIDC build provenance.
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
           V=$(node -p "require('./package.json').version")
           if npm view "falsegreen-js@$V" version >/dev/null 2>&1; then
