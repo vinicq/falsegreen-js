@@ -32,6 +32,9 @@ jobs:
           node-version: "20"
           registry-url: "https://registry.npmjs.org"
           cache: npm
+      # OIDC trusted publishing (tokenless auth) needs npm >= 11.5.1; Node 20
+      # ships npm 10, which signs provenance but cannot authenticate via OIDC.
+      - run: npm install -g npm@latest
       - run: npm ci
       - run: npm run build
       - run: npm test
