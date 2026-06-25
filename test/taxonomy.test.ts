@@ -3,7 +3,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
-  CASES, baseConfidence, riskGroupOf, groupOf, RiskGroup,
+  CASES, FIX_HINTS, baseConfidence, riskGroupOf, groupOf, RiskGroup,
 } from "../src/cases.js";
 import { ORACLE_REGISTRY_VERSION, oracleKind } from "../src/oracles.js";
 import { buildReport } from "../src/cli.js";
@@ -15,9 +15,8 @@ const GROUPS: RiskGroup[] = [
 
 describe("risk-group taxonomy (closed per-code table)", () => {
   it("every catalog code maps to one of the six risk groups", () => {
-    for (const code of Object.keys(CASES)) {
-      expect(GROUPS).toContain(riskGroupOf(code));
-    }
+    const unmapped = Object.keys(CASES).filter((code) => !GROUPS.includes(riskGroupOf(code)));
+    expect(unmapped).toEqual([]);
   });
 
   it("rejects an unknown code instead of defaulting", () => {
@@ -43,11 +42,10 @@ describe("severity / default-state are separate axes", () => {
   });
 
   it("the opt-in diagnostic group is off by default but keeps a severity", () => {
-    for (const code of ["D1", "D3", "D4", "D6", "D7", "D8", "M2"]) {
-      expect(CASES[code].defaultOn).toBe(false);
-      expect(baseConfidence(code)).toBe("off");
-      expect(CASES[code].severity).toBe("low"); // severity survives even while off
-    }
+    const diag = ["D1", "D3", "D4", "D6", "D7", "D8", "M2"];
+    expect(diag.filter((c) => CASES[c].defaultOn)).toEqual([]);          // all off by default
+    expect(diag.filter((c) => baseConfidence(c) !== "off")).toEqual([]);  // confidence reflects it
+    expect(diag.filter((c) => CASES[c].severity !== "low")).toEqual([]);  // severity survives while off
   });
 
   it("taxonomy does not change whether a code blocks", () => {
@@ -93,7 +91,7 @@ describe("JSON report shape", () => {
     expect(r.findings[0].riskGroup).toBe("nondeterminism");
     expect(r.findings[0].group).toBe("false-positive"); // legacy compat
     expect(r.findings[1].riskGroup).toBe("dependency");
-    expect(r.findings[0].fix).toBeTruthy();
+    expect(r.findings[0].fix).toBe(FIX_HINTS.C16);
   });
 
   it("reports the version from package.json, not a hard-coded literal", () => {
