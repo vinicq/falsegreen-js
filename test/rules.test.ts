@@ -228,6 +228,30 @@ describe("falsegreen-js rules", () => {
     expect(codes(src)).not.toContain("JS8");
   });
 
+  // --- C44: numeric tautology (parity with falsegreen) --------------------
+
+  it("C44: a direct length >= 0 is always true", () => {
+    expect(codes(`test("x", () => { expect(items.length).toBeGreaterThanOrEqual(0); });`)).toContain("C44");
+  });
+
+  it("does not flag C44 on a meaningful length bound (look-alike)", () => {
+    // length >= 1 / > 0 can be false on an empty array — a real check, not a tautology.
+    expect(codes(`test("x", () => { expect(items.length).toBeGreaterThanOrEqual(1); });`)).not.toContain("C44");
+    expect(codes(`test("x", () => { expect(items.length).toBeGreaterThan(0); });`)).not.toContain("C44");
+  });
+
+  it("does not flag C44 on a difference of lengths (can be negative)", () => {
+    // a derived expression that only mentions .length is not the direct subject.
+    const src = `test("x", () => { expect(actual.length - expected.length).toBeGreaterThanOrEqual(0); });`;
+    expect(codes(src)).not.toContain("C44");
+  });
+
+  it("does not flag C44 on a finiteness/NaN guard (false for NaN and Infinity)", () => {
+    // these can be false (NaN beats no bound), so they are meaningful guards, not tautologies.
+    expect(codes(`test("x", () => { expect(score).toBeLessThan(Infinity); });`)).not.toContain("C44");
+    expect(codes(`test("x", () => { expect(score).toBeGreaterThan(-Infinity); });`)).not.toContain("C44");
+  });
+
   // --- codes added from the consolidated catalog (Lote 1 + Lote 2) ---------
 
   it("JS21: matcher referenced but never called", () => {

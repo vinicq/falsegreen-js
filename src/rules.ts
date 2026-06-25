@@ -476,6 +476,23 @@ export function analyze(sf: ts.SourceFile): Finding[] {
         if (subjIsComparison && boolMatcher) {
           push(lineOf(sf, node), "JS15", "comparison wrapped in a boolean; assert the values directly");
         }
+        // C44 numeric tautology: `expect(x.length).toBeGreaterThanOrEqual(0)`.
+        // A `.length` is never negative and never NaN, so `>= 0` holds for every
+        // input and verifies nothing — the JS/TS mirror of the Python `len(x) >= 0`.
+        // The subject must be a DIRECT property access ending in `.length`: a derived
+        // expression that merely mentions `.length` (e.g. `a.length - b.length`) can
+        // be negative, so it is a real check and is not flagged. Bounds that can still
+        // fail (`>= 1`, `> 0`) are not tautologies either. Finiteness/NaN guards
+        // (`toBeLessThan(Infinity)`, `toBeGreaterThan(-Infinity)`) are intentionally
+        // NOT flagged: they are false for NaN (and `Infinity`), so they catch
+        // divide-by-zero and invalid-number bugs.
+        if (
+          chain.matcher === "toBeGreaterThanOrEqual" &&
+          arg && ts.isNumericLiteral(arg) && Number(arg.text) === 0 &&
+          subj && ts.isPropertyAccessExpression(subj) && subj.name.text === "length"
+        ) {
+          push(lineOf(sf, node), "C44", "length is never negative; this comparison is always true");
+        }
         // D8 (diagnostic, opt-in): a magic integer literal as the expected value.
         // Floats are C8's concern; D8 covers bare integers abs > 1.
         if ((chain.matcher === "toBe" || chain.matcher === "toEqual" || chain.matcher === "toStrictEqual") &&

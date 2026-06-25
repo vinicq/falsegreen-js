@@ -42,6 +42,20 @@ expect(user.id).toBe(user.id);              // flagged: tautology
 ```
 Clean: `expect(user.id).toBe(42)`. A call on a side is not flagged (`f()` may differ).
 
+## C44 — numeric tautology (high, J2)
+
+```ts
+expect(items.length).toBeGreaterThanOrEqual(0);   // flagged: a length is never < 0
+```
+A `.length` is never negative and never NaN, so `>= 0` holds for every input and verifies
+nothing — the JS/TS mirror of the Python `len(x) >= 0`. The subject must be a direct
+`.length` property access. A bound that can still be false is a real check and is not
+flagged: `expect(items.length).toBeGreaterThanOrEqual(1)` (false on an empty array), a
+difference of lengths `expect(a.length - b.length).toBeGreaterThanOrEqual(0)` (can be
+negative), and finiteness guards like `expect(score).toBeLessThan(Infinity)` or
+`toBeGreaterThan(-Infinity)` (false for `NaN`, so they catch divide-by-zero and
+invalid-number bugs). Clean: assert the actual length, or a bound the input can fail.
+
 ## C8 — exact equality on a float (low, J4)
 
 ```ts
