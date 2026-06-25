@@ -42,6 +42,21 @@ expect(user.id).toBe(user.id);              // flagged: tautology
 ```
 Clean: `expect(user.id).toBe(42)`. A call on a side is not flagged (`f()` may differ).
 
+## C44 — numeric tautology (high, J2)
+
+```ts
+expect(items.length).toBeGreaterThanOrEqual(0);   // flagged: length is never < 0
+expect(score).toBeGreaterThan(-Infinity);         // flagged: every number beats -Infinity
+expect(score).toBeLessThanOrEqual(Number.POSITIVE_INFINITY); // flagged
+```
+The bound can never be crossed, so the comparison holds for every input and verifies
+nothing. Only the provably-always-true forms fire: `length >= 0`, `> -Infinity` /
+`>= -Infinity` (and `Number.NEGATIVE_INFINITY`), `< Infinity` / `<= Infinity` (and
+`Number.POSITIVE_INFINITY`). A bound that can still be false is a real check and is not
+flagged: `expect(items.length).toBeGreaterThanOrEqual(1)` (false on an empty array),
+`expect(score).toBeLessThan(100)`. Clean: assert the value, or a bound the input can
+actually fail.
+
 ## C8 — exact equality on a float (low, J4)
 
 ```ts

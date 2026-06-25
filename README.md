@@ -115,6 +115,7 @@ line up in the research. `JS*` codes are ecosystem-specific.
 | C5  | high | always-true check (`expect(true).toBe(true)`, `assert(1)`) |
 | C6  | low  | weak check — only verifies something came back (`toBeTruthy`/`toBeDefined`, `length > 0`) |
 | C7  | high | compares a thing to itself (`expect(x).toBe(x)`) |
+| C44 | high | numeric tautology — a bound the value can never cross (`length >= 0`, `> -Infinity`, `< Infinity`) |
 | C20 | high | assertion in dead code after a `return`/`throw` — it never runs |
 | C23 | low  | reads a real file at a literal path, or a hard-coded URL (mystery guest) |
 | C8  | low  | exact equality on a float (use `toBeCloseTo`) |
@@ -169,18 +170,29 @@ npx falsegreen-js --diagnostics      # include D*/M* as warnings
 Some catalog codes were reviewed and left out, on purpose:
 
 - **JS19** (`toBe` on an object/array literal): `expect(x).toBe({...})` compares by reference,
-  so it always fails. That is a loud red test, the opposite of false-green, and out of scope.
+  so it always fails. That is the false-red axis (a test that always fails), the opposite of
+  what this scanner looks for, and out of scope on principle.
 - **JS20** (a Promise compared without `resolves`/`rejects`): telling that a value is a
-  Promise needs type information the parser does not have, so it would be too noisy.
+  Promise needs type information the AST does not carry, so it would be too noisy.
 - **JS12** (a floating promise whose `expect` is never returned): already covered by JS7.
 - **JS16** (`async` test with no `expect.assertions(n)`): the absence of a guard is not a
   smell on its own; flagging it would fire on most async tests.
+- **JS14** (a giant inline snapshot): a readability and review-noise concern, not a
+  false-green one. The snapshot still protects, so it belongs to the diagnostic group and is
+  better served by `eslint-plugin-jest` (`no-large-snapshots`) as an opt-in lint rule.
 - **JS10** (any conditional in a test body): handled by `eslint-plugin-jest`
   (`no-conditional-in-test`); JS9 and C21 already cover the false-green subset.
+- **C1** (an assertion under an `if`/`for` that may not run): redundant once C21 and JS9
+  exist, and high-FP on its own. C21 already fires the actual false-green case, where
+  *every* assertion is conditional and the test can pass with nothing checked. A test that
+  mixes a conditional assertion with an unconditional one is not false-green: the
+  unconditional assertion still protects. JS9 covers the dead-branch form (`if(false)`).
+  Flagging every conditional assertion (C1's full scope) is the linter concern JS10 already
+  names (`no-conditional-in-test`), so C1 would add noise without a new false-green signal.
 
 ### What carries over from falsegreen, what does not
 
-Ported (same concept): C2, C2b, C5, C7, C8, C16, CC.
+Ported (same concept): C2, C2b, C5, C7, C8, C16, C44, CC.
 
 Python-only, not applicable to JS/TS: pytest collection rules (C4 family), `pytest.raises`
 breadth (C9/C19/C27/C28), fixtures and `os.environ`/global-state codes (C23/C24/C29),

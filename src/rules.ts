@@ -88,6 +88,25 @@ function isLiteral(e: ts.Expression | undefined): boolean {
   );
 }
 
+/** Positive infinity as written in code: `Infinity`, `Number.POSITIVE_INFINITY`. */
+function isPositiveInfinity(e?: ts.Expression): boolean {
+  if (!e) return false;
+  if (ts.isIdentifier(e) && e.text === "Infinity") return true;
+  if (ts.isPropertyAccessExpression(e)) return calleeName(e) === "Number.POSITIVE_INFINITY";
+  return false;
+}
+
+/** Negative infinity: `-Infinity` (a unary minus over `Infinity`) or
+ *  `Number.NEGATIVE_INFINITY`. */
+function isNegativeInfinity(e?: ts.Expression): boolean {
+  if (!e) return false;
+  if (ts.isPrefixUnaryExpression(e) && e.operator === ts.SyntaxKind.MinusToken) {
+    return isPositiveInfinity(e.operand);
+  }
+  if (ts.isPropertyAccessExpression(e)) return calleeName(e) === "Number.NEGATIVE_INFINITY";
+  return false;
+}
+
 /** A value turned into text: String(x), JSON.stringify(x), x.toString(), `${x}`. */
 function isStringify(e?: ts.Expression): boolean {
   if (!e) return false;
@@ -475,6 +494,28 @@ export function analyze(sf: ts.SourceFile): Finding[] {
           chain.matcher === "toBeTruthy" || chain.matcher === "toBeFalsy";
         if (subjIsComparison && boolMatcher) {
           push(lineOf(sf, node), "JS15", "comparison wrapped in a boolean; assert the values directly");
+        }
+        // C44 numeric tautology: a bound the value can never cross, so the
+        // comparison holds for every input and verifies nothing. Only the
+        // provably-always-true forms are flagged (low FP):
+        //   - expect(x.length).toBeGreaterThanOrEqual(0)  — length is never < 0
+        //   - expect(x).toBeGreaterThan(-Infinity) / toBeGreaterThanOrEqual(-Infinity)
+        //   - expect(x).toBeLessThan(Infinity) / toBeLessThanOrEqual(Infinity)
+        // Comparisons that can still be false (>= 1, > 0, a finite bound) are not C44.
+        if (subj) {
+          const lengthGteZero =
+            chain.matcher === "toBeGreaterThanOrEqual" &&
+            arg && ts.isNumericLiteral(arg) && Number(arg.text) === 0 &&
+            /\.length\b/.test(subj.getText(sf));
+          const gtNegInfinity =
+            (chain.matcher === "toBeGreaterThan" || chain.matcher === "toBeGreaterThanOrEqual") &&
+            isNegativeInfinity(arg);
+          const ltPosInfinity =
+            (chain.matcher === "toBeLessThan" || chain.matcher === "toBeLessThanOrEqual") &&
+            isPositiveInfinity(arg);
+          if (lengthGteZero || gtNegInfinity || ltPosInfinity) {
+            push(lineOf(sf, node), "C44", "the bound can never be crossed; this comparison is always true");
+          }
         }
         // D8 (diagnostic, opt-in): a magic integer literal as the expected value.
         // Floats are C8's concern; D8 covers bare integers abs > 1.
