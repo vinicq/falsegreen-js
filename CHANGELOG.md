@@ -6,6 +6,24 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+### Added
+- Risk-group taxonomy: every code now carries an explicit conceptual failure mode
+  (`effectiveness`, `execution`, `nondeterminism`, `dependency`, `structure`,
+  `diagnostic`), read from a closed per-code table (`riskGroupOf`) rather than the
+  code prefix. An unknown code is rejected instead of defaulted. The JSON report
+  gains a `riskGroup` field; the legacy `group` field stays for transition compatibility.
+- A code's metadata is split into independent axes: `group` (taxonomy), `severity`
+  (`high`/`low`), `defaultOn` (whether the default scan emits it), and `judgment`
+  (J1-J6). The taxonomy no longer depends on whether a finding blocks.
+- Oracle registry (`oracles.ts`): the assertion-API vocabulary is one versioned
+  table, each family classified by how its failure reaches the runner (`sync-fail`,
+  `promise`, `runner-registered`, `value-only`). The JSON report records the
+  `oracleRegistryVersion` that classified it.
+
+### Fixed
+- `--version` and the JSON report's `version` field read from `package.json` at
+  runtime; they were pinned to a stale `0.2.0` literal while the package was `0.3.0`.
+
 ## [0.3.0] - 2026-06-23
 
 ### Added

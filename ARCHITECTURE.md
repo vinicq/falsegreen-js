@@ -18,7 +18,8 @@ The code mirrors that flow, one file per stage:
 | `scan.ts` | discovery, config, suppression, exit-code logic |
 | `parse.ts` | source text to a `ts.SourceFile`, with the right `ScriptKind` per extension |
 | `rules.ts` | the visitor that walks the AST and emits findings |
-| `cases.ts` | the case catalog, judgments, and group lookup |
+| `cases.ts` | the case catalog, judgments, risk-group taxonomy, and confidence lookup |
+| `oracles.ts` | the oracle registry: the assertion-API vocabulary as one versioned table |
 | `types.ts` | the `Finding` shape |
 | `cli.ts` | argument parsing and output |
 
@@ -44,19 +45,50 @@ The code mirrors that flow, one file per stage:
 | `10` | low-confidence findings only |
 | `20` | at least one high-confidence finding |
 
-Each finding carries code, confidence (`high`/`low`), file, line, and judgment (J1-J6).
-Confidence can be overridden per code through `.falsegreenrc.json`, `falsegreen.json`, or a
-`falsegreen` key in `package.json`. An inline `// falsegreen: ignore` (or `ignore[C8]`)
-silences a finding on its line.
+Each finding carries code, confidence (`high`/`low`), file, line, judgment (J1-J6), and the
+`riskGroup` it belongs to. The JSON report also keeps a legacy `group` field (the old
+prefix grouping) for transition compatibility, and records the `oracleRegistryVersion` that
+produced it. Confidence can be overridden per code through `.falsegreenrc.json`,
+`falsegreen.json`, or a `falsegreen` key in `package.json`. An inline `// falsegreen: ignore`
+(or `ignore[C8]`) silences a finding on its line.
 
-## The case catalog and groups
+## The case catalog and the risk-group taxonomy
 
-`cases.ts` maps each code to `(title, confidence, judgment)`. Codes split into three groups
-by prefix: `false-positive` (C*/JS*, on by default), `diagnostic` (D*, opt-in), `coupling`
-(M*, opt-in). `--diagnostics` turns the off-by-default maintainability group into warnings.
+`cases.ts` maps each code to four independent axes: `group` (the conceptual failure mode),
+`severity` (`high`/`low`), `defaultOn` (whether the default scan emits it), and `judgment`
+(J1-J6). Keeping them apart is deliberate: a code's taxonomy must not depend on whether it
+blocks, and the blocking decision (the exit code) reads only the severity of the findings
+that are actually emitted.
+
+The primary grouping is the **risk-group taxonomy**, a closed set of six conceptual failure
+modes read from the per-code table (`riskGroupOf`), never the code prefix:
+
+| Risk group | What fails |
+|------------|-----------|
+| `effectiveness` | no oracle, a trivial oracle, or the wrong oracle (F1/F3/F4) |
+| `execution` | the check exists but does not run, or the test vanishes from the count (F2/F5) |
+| `nondeterminism` | passes or fails by luck: time, randomness, timers (F6) |
+| `dependency` | real I/O or a stand-in for the unit under test: mystery guest, self-mock |
+| `structure` | size and readability; the test still protects (F8 maintainability) |
+| `diagnostic` | opt-in health signal, off by default |
+
+An unknown code is rejected, not defaulted, so a code added to the rules but never
+classified fails loudly. The legacy `group` (prefix-based `false-positive`/`diagnostic`/
+`coupling`/`project`) survives only as a compatibility field on the JSON output.
+`--diagnostics` turns the off-by-default `diagnostic` and `structure` codes into warnings.
 Shared C-codes carry the same concept as the Python sibling (C2, C2b, C5, C7, C8, C16); the
 `JS*` codes cover patterns specific to the JS/TS runners (focused tests, `expect` with no
 matcher, floating async queries, snapshot-only assertions).
+
+## The oracle registry
+
+`oracles.ts` is the single, versioned source for the assertion-API vocabulary the scanner
+understands. Each family is classified by how its failure reaches the runner: `sync-fail`
+(throws synchronously, so a bare statement fails the test), `promise` (must be awaited or
+returned to surface), `runner-registered` (the framework collects the outcome from a fluent
+chain), and `value-only` (produces a value that must feed an assertion). `rules.ts` consults
+this registry instead of carrying its own sets, and `ORACLE_REGISTRY_VERSION` is stamped
+onto the JSON report. This table is the foundation for the planned split of the async rules.
 
 ## The boundary: static, semantic, runtime
 

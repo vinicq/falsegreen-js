@@ -1,34 +1,22 @@
 import ts from "typescript";
 import { Finding, makeFinding } from "./types.js";
 import { DIAGNOSTIC_THRESHOLDS } from "./cases.js";
+import {
+  ASSERT_ROOTS, ASSERT_METHODS, SNAPSHOT_MATCHERS, EQUALITY_MATCHERS,
+  ASYNC_AWAIT_LEAVES, VUE_SVELTE_ASYNC,
+} from "./oracles.js";
 import { lineOf } from "./parse.js";
 
 // --- test framework vocabulary (runner-agnostic) ---------------------------
 // it/test/specify (Jest, Vitest, Mocha, Jasmine, AVA, node:test, Cypress,
 // Playwright, tap). describe/context/suite are suites. fit/fdescribe focus and
-// xit/xdescribe skip come from Jasmine/Mocha.
+// xit/xdescribe skip come from Jasmine/Mocha. The assertion-API vocabulary
+// (ASSERT_ROOTS/ASSERT_METHODS/SNAPSHOT_MATCHERS/EQUALITY_MATCHERS and the async
+// leaves) lives in the oracle registry (oracles.ts), imported above.
 const TEST_BLOCK_ROOTS = new Set(["it", "test", "specify"]);
 const SUITE_ROOTS = new Set(["describe", "context", "suite", "fdescribe", "xdescribe", "fcontext", "xcontext"]);
 const FOCUS_NAMES = new Set(["fit", "fdescribe", "fcontext"]);
 const SKIP_NAMES = new Set(["xit", "xdescribe", "xcontext", "xspecify"]);
-
-// Roots whose `<root>.<method>()` call counts as an assertion across runners:
-// AVA (t), node:test/tap (t), Cypress (cy), chai assert, sinon.assert.
-const ASSERT_ROOTS = new Set(["assert", "t", "cy", "tap", "qunit", "sinon", "chai", "should"]);
-// Assertion method names used by AVA / tap / node:test / chai assert / QUnit.
-const ASSERT_METHODS = new Set([
-  "is", "not", "ok", "notOk", "true", "false", "truthy", "falsy",
-  "equal", "notEqual", "deepEqual", "notDeepEqual", "strictEqual",
-  "same", "notSame", "throws", "notThrows", "throwsAsync", "regex", "notRegex",
-  "pass", "fail", "assert", "expect", "include", "match",
-]);
-const SNAPSHOT_MATCHERS = new Set([
-  "toMatchSnapshot", "toMatchInlineSnapshot",
-  "toThrowErrorMatchingSnapshot", "toThrowErrorMatchingInlineSnapshot",
-  // visual snapshots (Playwright): the baseline is generated from the output too
-  "toHaveScreenshot", "toMatchScreenshot",
-]);
-const EQUALITY_MATCHERS = new Set(["toBe", "toEqual", "toStrictEqual"]);
 
 // --- name helpers ----------------------------------------------------------
 function calleeName(expr: ts.Expression): string {
@@ -283,9 +271,8 @@ function getTestCallback(call: ts.CallExpression): ts.FunctionLikeDeclaration | 
 }
 
 // --- JS5: async query/event not awaited (Testing Library) ------------------
-const ASYNC_AWAIT_LEAVES = new Set(["waitFor", "waitForElementToBeRemoved"]);
-// Vue/Svelte async test helpers that return a promise and must be awaited.
-const VUE_SVELTE_ASYNC = new Set(["flushPromises", "nextTick", "$nextTick", "tick"]);
+// ASYNC_AWAIT_LEAVES (waitFor*) and VUE_SVELTE_ASYNC (flushPromises/nextTick/tick)
+// come from the oracle registry (oracles.ts).
 function isAsyncQueryCall(name: string): boolean {
   const parts = name.split(".");
   const root = parts[0];
