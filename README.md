@@ -1,5 +1,10 @@
 # falsegreen-js
 
+[![CI](https://github.com/vinicq/falsegreen-js/actions/workflows/ci.yml/badge.svg)](https://github.com/vinicq/falsegreen-js/actions/workflows/ci.yml)
+[![npm](https://img.shields.io/npm/v/falsegreen-js.svg)](https://www.npmjs.com/package/falsegreen-js)
+[![Node](https://img.shields.io/node/v/falsegreen-js.svg)](https://www.npmjs.com/package/falsegreen-js)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
 Find JavaScript/TypeScript unit tests that give false positives: green tests that
 protect nothing, and tests that pass while asserting the wrong thing. Deterministic
 AST scan, no code execution. Sibling of [`falsegreen`](https://github.com/vinicq/falsegreen)
