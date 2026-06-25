@@ -9,6 +9,12 @@ import {
   scanPaths, scanFile, stagedFiles, loadConfig, ScanOptions,
 } from "./scan.js";
 import { auditConfig } from "./audit.js";
+import {
+  OutputFormat, OUTPUT_EXT, renderSarif, renderJunit,
+  loadBaseline, writeBaseline, applyBaseline,
+} from "./report.js";
+
+const DEFAULT_BASELINE = ".falsegreen-baseline.json";
 
 /** Single source of truth for the version: package.json, resolved at runtime so
  * `--version` and the JSON report never drift from the published package. */
@@ -28,8 +34,11 @@ const HELP = `falsegreen-js ${VERSION} - find false-positive JS/TS tests (static
 Usage:
   falsegreen-js [paths...]        files/dirs; no args = scan cwd
   falsegreen-js --staged          only test files staged in git
-  falsegreen-js --json            JSON output
+  falsegreen-js --format FMT      text | json | sarif | junit (default text)
+  falsegreen-js --json            alias for --format json
   falsegreen-js --output PATH     write to a file, or report.<ext> into a directory
+  falsegreen-js --baseline [PATH] suppress findings in PATH (default ${DEFAULT_BASELINE})
+  falsegreen-js --write-baseline [PATH]  record current findings as a baseline, exit 0
   falsegreen-js --config-audit    audit Jest/Vitest config (project-layer PL codes)
   falsegreen-js --diagnostics     also report the opt-in maintainability group (D*/M*)
   falsegreen-js --disable C7,JS3  turn off specific codes
@@ -42,12 +51,21 @@ Exit codes: 0 clean, 10 low-confidence only, 20 high-confidence present.
 Suppress inline:  expect(x).toBe(x); // falsegreen: ignore[C7]
 Covers: .js .jsx .ts .tsx .mjs .cjs .mts .cts`;
 
+const FORMATS = new Set<OutputFormat>(["text", "json", "sarif", "junit"]);
+
 function parseArgs(argv: string[]) {
   const paths: string[] = [];
   let json = false, staged = false, help = false, version = false, diagnostics = false;
   let configAudit = false;
+  let format: OutputFormat | undefined;
   let output: string | undefined;
+  let baseline: string | undefined;
+  let writeBaselinePath: string | undefined;
   const disable = new Set<string>();
+  // An optional-value flag (--baseline / --write-baseline) consumes the next
+  // token only when it is a value, not another flag.
+  const optionalValue = (next: string | undefined): string | undefined =>
+    (next !== undefined && !next.startsWith("-")) ? next : undefined;
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === "--json") json = true;
@@ -56,9 +74,33 @@ function parseArgs(argv: string[]) {
     else if (a === "--diagnostics") diagnostics = true;
     else if (a === "--help" || a === "-h") help = true;
     else if (a === "--version" || a === "-V") version = true;
-    else if (a === "--output") output = argv[++i] ?? "";
+    else if (a === "--format") {
+      const v = argv[++i] ?? "";
+      if (!FORMATS.has(v as OutputFormat)) {
+        process.stderr.write(`falsegreen-js: invalid --format ${v} (text|json|sarif|junit)\n`);
+        process.exit(2);
+      }
+      format = v as OutputFormat;
+    } else if (a.startsWith("--format=")) {
+      const v = a.slice("--format=".length);
+      if (!FORMATS.has(v as OutputFormat)) {
+        process.stderr.write(`falsegreen-js: invalid --format ${v} (text|json|sarif|junit)\n`);
+        process.exit(2);
+      }
+      format = v as OutputFormat;
+    } else if (a === "--output") output = argv[++i] ?? "";
     else if (a.startsWith("--output=")) output = a.slice("--output=".length);
-    else if (a === "--disable") {
+    else if (a === "--baseline") {
+      const v = optionalValue(argv[i + 1]); if (v !== undefined) i++;
+      baseline = v ?? DEFAULT_BASELINE;
+    } else if (a.startsWith("--baseline=")) {
+      baseline = a.slice("--baseline=".length) || DEFAULT_BASELINE;
+    } else if (a === "--write-baseline") {
+      const v = optionalValue(argv[i + 1]); if (v !== undefined) i++;
+      writeBaselinePath = v ?? DEFAULT_BASELINE;
+    } else if (a.startsWith("--write-baseline=")) {
+      writeBaselinePath = a.slice("--write-baseline=".length) || DEFAULT_BASELINE;
+    } else if (a === "--disable") {
       const v = argv[++i] ?? "";
       v.split(",").map((s) => s.trim()).filter(Boolean).forEach((c) => disable.add(c));
     } else if (a.startsWith("--disable=")) {
@@ -69,15 +111,19 @@ function parseArgs(argv: string[]) {
       process.exit(2);
     } else paths.push(a);
   }
-  return { paths, json, staged, help, version, diagnostics, configAudit, disable, output };
+  const fmt: OutputFormat = format ?? (json ? "json" : "text");
+  return {
+    paths, fmt, staged, help, version, diagnostics, configAudit, disable,
+    output, baseline, writeBaselinePath,
+  };
 }
 
 /** Turn --output into a concrete file path. A directory (existing dir, a
  * trailing separator, or an extension-less name like ".falsegreen") receives
  * "report.<ext>" for the chosen format; anything else is treated as a file.
  * Missing parent directories are created either way. */
-export function resolveOutputPath(p: string, fmt: "json" | "text"): string {
-  const ext = fmt === "json" ? "json" : "txt";
+export function resolveOutputPath(p: string, fmt: OutputFormat): string {
+  const ext = OUTPUT_EXT[fmt];
   const trimmed = p.replace(/[/\\]+$/, "");
   const base = path.basename(trimmed);
   let isDir = /[/\\]$/.test(p) || path.extname(base) === "";
@@ -113,6 +159,16 @@ export function buildReport(findings: Finding[]) {
       fix: FIX_HINTS[f.code] ?? "",
     })),
   };
+}
+
+/** Render findings in the chosen format. JSON keeps the full report object
+ * (riskGroup/group/fix/oracleRegistryVersion/judgments); SARIF/JUnit follow the
+ * Python sibling's contract. */
+export function render(findings: Finding[], fmt: OutputFormat): string {
+  if (fmt === "json") return JSON.stringify(buildReport(findings), null, 2);
+  if (fmt === "sarif") return renderSarif(findings, TOOL_URI, VERSION);
+  if (fmt === "junit") return renderJunit(findings);
+  return renderText(findings);
 }
 
 export function renderText(findings: Finding[]): string {
@@ -158,38 +214,47 @@ export function renderText(findings: Finding[]): string {
   return lines.join("\n");
 }
 
+function scan(opt: ReturnType<typeof parseArgs>): Finding[] {
+  const config = loadConfig();
+  const scanOpts: ScanOptions = { config, cliDisable: opt.disable, diagnostics: opt.diagnostics };
+  if (opt.staged) return stagedFiles().flatMap((f) => scanFile(f, scanOpts));
+  return scanPaths(opt.paths.length ? opt.paths : ["."], scanOpts);
+}
+
+function emit(rendered: string, opt: ReturnType<typeof parseArgs>): void {
+  if (opt.output) fs.writeFileSync(resolveOutputPath(opt.output, opt.fmt), rendered + "\n");
+  else process.stdout.write(rendered + "\n");
+}
+
 function main(): void {
   const opt = parseArgs(process.argv.slice(2));
   if (opt.help) { process.stdout.write(HELP + "\n"); process.exit(0); }
   if (opt.version) { process.stdout.write(VERSION + "\n"); process.exit(0); }
 
+  // --write-baseline records the current scan and exits clean, ahead of every
+  // other mode (mirrors the Python sibling: it ratchets the file scan only).
+  if (opt.writeBaselinePath !== undefined) {
+    const n = writeBaseline(opt.writeBaselinePath, scan(opt));
+    process.stderr.write(`falsegreen-js: wrote ${n} fingerprint(s) to ${opt.writeBaselinePath}\n`);
+    process.exit(0);
+  }
+
   if (opt.configAudit) {
     const base = opt.paths.find((p) => { try { return fs.statSync(p).isDirectory(); } catch { return false; } }) ?? ".";
     const findings = auditConfig(base);
-    const rendered = opt.json ? JSON.stringify(buildReport(findings), null, 2) : renderText(findings);
-    if (opt.output) fs.writeFileSync(resolveOutputPath(opt.output, opt.json ? "json" : "text"), rendered + "\n");
-    else process.stdout.write(rendered + "\n");
+    emit(render(findings, opt.fmt), opt);
     process.exit(findings.length ? 10 : 0);
   }
 
-  const config = loadConfig();
-  const scanOpts: ScanOptions = { config, cliDisable: opt.disable, diagnostics: opt.diagnostics };
+  let findings = scan(opt);
 
-  let findings: Finding[];
-  if (opt.staged) {
-    findings = stagedFiles().flatMap((f) => scanFile(f, scanOpts));
-  } else {
-    findings = scanPaths(opt.paths.length ? opt.paths : ["."], scanOpts);
+  // The baseline filter runs before the exit code, so CI fails only on findings
+  // that are not already recorded.
+  if (opt.baseline !== undefined) {
+    findings = applyBaseline(findings, loadBaseline(opt.baseline));
   }
 
-  const rendered = opt.json ? JSON.stringify(buildReport(findings), null, 2) : renderText(findings);
-
-  if (opt.output) {
-    const dest = resolveOutputPath(opt.output, opt.json ? "json" : "text");
-    fs.writeFileSync(dest, rendered + "\n");
-  } else {
-    process.stdout.write(rendered + "\n");
-  }
+  emit(render(findings, opt.fmt), opt);
   process.exit(exitCode(findings));
 }
 

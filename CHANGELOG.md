@@ -7,6 +7,19 @@ All notable changes to this project are documented here. The format is based on
 ## [Unreleased]
 
 ### Added
+- Output-format parity with the Python scanner: `--format text|json|sarif|junit`
+  (default `text`; `--json` stays as an alias for `--format json`). SARIF 2.1.0
+  emits one rule per code and one result per finding, maps high to `error`, low to
+  `warning`, off to `note`, and tags each result with its judgment, `risk:<group>`,
+  and `level:<conf>`. JUnit XML turns high findings into `<failure>` and the rest
+  into `<skipped>`. `--output` writes any of the four formats (sarif -> `.sarif`,
+  junit -> `.xml`).
+- Baseline ratchet: `--baseline [PATH]` suppresses findings already recorded (so CI
+  fails only on net-new ones), and `--write-baseline [PATH]` records the current
+  findings and exits 0. Both default to `.falsegreen-baseline.json`. A finding's
+  identity is a content fingerprint (`sha1` of relative path + code + detail, no
+  line number), stable across unrelated line shifts. The fingerprint omits the
+  source snippet the Python scanner folds in, since the js `Finding` carries none.
 - Risk-group taxonomy: every code now carries an explicit conceptual failure mode
   (`effectiveness`, `execution`, `nondeterminism`, `dependency`, `structure`,
   `diagnostic`), read from a closed per-code table (`riskGroupOf`) rather than the

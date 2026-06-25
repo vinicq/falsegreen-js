@@ -21,7 +21,8 @@ The code mirrors that flow, one file per stage:
 | `cases.ts` | the case catalog, judgments, risk-group taxonomy, and confidence lookup |
 | `oracles.ts` | the oracle registry: the assertion-API vocabulary as one versioned table |
 | `types.ts` | the `Finding` shape |
-| `cli.ts` | argument parsing and output |
+| `report.ts` | the SARIF / JUnit renderers and the baseline ratchet |
+| `cli.ts` | argument parsing, format selection, and output |
 
 1. **Discover.** Walk the paths. A file counts as a test when its extension is one of the
    eight JS/TS forms (`.js .jsx .ts .tsx .mjs .cjs .mts .cts`) and either its name matches a
@@ -51,6 +52,22 @@ prefix grouping) for transition compatibility, and records the `oracleRegistryVe
 produced it. Confidence can be overridden per code through `.falsegreenrc.json`,
 `falsegreen.json`, or a `falsegreen` key in `package.json`. An inline `// falsegreen: ignore`
 (or `ignore[C8]`) silences a finding on its line.
+
+`--format text|json|sarif|junit` (default `text`; `--json` is an alias for `--format json`)
+selects the renderer in `report.ts`, matching the Python sibling's contract so the two
+scanners are interchangeable in a pipeline. SARIF 2.1.0 maps high to `error`, low to
+`warning`, off to `note`, and tags each result with its judgment, risk group, and level;
+JUnit turns high findings into `<failure>` and the rest into `<skipped>`. `--output` writes
+the chosen format to a file or to `report.<ext>` inside a directory.
+
+The **baseline ratchet** (`--baseline [PATH]` / `--write-baseline [PATH]`, default
+`.falsegreen-baseline.json`) lets a project adopt the scanner without fixing every legacy
+finding first. A finding's identity is a content fingerprint, `sha1(relpath + code +
+detail)[:16]`, with no line number, so it survives unrelated line shifts. `--baseline`
+suppresses any finding whose fingerprint is recorded, and the filter runs **before** the
+exit code, so CI fails only on net-new findings. The js fingerprint omits the source snippet
+the Python scanner folds in (the js `Finding` carries no snippet), the one intentional
+divergence from the Python contract.
 
 ## The case catalog and the risk-group taxonomy
 
