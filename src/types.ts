@@ -1,4 +1,4 @@
-import { CASES, Confidence, PyramidLevel } from "./cases.js";
+import { baseConfidence, CASES, Confidence, PyramidLevel } from "./cases.js";
 
 export interface Finding {
   file: string;
@@ -22,7 +22,7 @@ export function makeFinding(
     line,
     code,
     detail,
-    confidence: confidence ?? CASES[code].confidence,
+    confidence: confidence ?? baseConfidence(code),
     title: CASES[code].title,
     level: "unit",
   };

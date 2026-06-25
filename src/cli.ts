@@ -1,15 +1,26 @@
 #!/usr/bin/env node
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { pathToFileURL } from "node:url";
+import { pathToFileURL, fileURLToPath } from "node:url";
 import { Finding } from "./types.js";
-import { JUDGMENTS, CASES, groupOf, FIX_HINTS } from "./cases.js";
+import { JUDGMENTS, CASES, groupOf, riskGroupOf, FIX_HINTS } from "./cases.js";
+import { ORACLE_REGISTRY_VERSION } from "./oracles.js";
 import {
   scanPaths, scanFile, stagedFiles, loadConfig, ScanOptions,
 } from "./scan.js";
 import { auditConfig } from "./audit.js";
 
-const VERSION = "0.2.0";
+/** Single source of truth for the version: package.json, resolved at runtime so
+ * `--version` and the JSON report never drift from the published package. */
+function readVersion(): string {
+  try {
+    const pkg = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "package.json");
+    return JSON.parse(fs.readFileSync(pkg, "utf-8")).version ?? "0.0.0";
+  } catch {
+    return "0.0.0";
+  }
+}
+const VERSION = readVersion();
 const TOOL_URI = "https://github.com/vinicq/falsegreen-js";
 
 const HELP = `falsegreen-js ${VERSION} - find false-positive JS/TS tests (static AST scan)
@@ -86,6 +97,24 @@ function exitCode(findings: Finding[]): number {
   return 0;
 }
 
+/** The JSON report object. Each finding carries both the primary `riskGroup`
+ * (closed taxonomy) and the legacy `group` (transition-compat), plus its fix
+ * hint. The tool block records the oracle-registry version that classified it. */
+export function buildReport(findings: Finding[]) {
+  return {
+    tool: "falsegreen-js",
+    version: VERSION,
+    oracleRegistryVersion: ORACLE_REGISTRY_VERSION,
+    judgments: JUDGMENTS,
+    findings: findings.map((f) => ({
+      ...f,
+      riskGroup: riskGroupOf(f.code),
+      group: groupOf(f.code),
+      fix: FIX_HINTS[f.code] ?? "",
+    })),
+  };
+}
+
 export function renderText(findings: Finding[]): string {
   if (findings.length === 0) return "falsegreen-js: no false-positive patterns found.";
   const byFile = new Map<string, Finding[]>();
@@ -137,12 +166,7 @@ function main(): void {
   if (opt.configAudit) {
     const base = opt.paths.find((p) => { try { return fs.statSync(p).isDirectory(); } catch { return false; } }) ?? ".";
     const findings = auditConfig(base);
-    const rendered = opt.json
-      ? JSON.stringify({
-          tool: "falsegreen-js", version: VERSION, judgments: JUDGMENTS,
-          findings: findings.map((f) => ({ ...f, group: groupOf(f.code), fix: FIX_HINTS[f.code] ?? "" })),
-        }, null, 2)
-      : renderText(findings);
+    const rendered = opt.json ? JSON.stringify(buildReport(findings), null, 2) : renderText(findings);
     if (opt.output) fs.writeFileSync(resolveOutputPath(opt.output, opt.json ? "json" : "text"), rendered + "\n");
     else process.stdout.write(rendered + "\n");
     process.exit(findings.length ? 10 : 0);
@@ -158,16 +182,7 @@ function main(): void {
     findings = scanPaths(opt.paths.length ? opt.paths : ["."], scanOpts);
   }
 
-  const rendered = opt.json
-    ? JSON.stringify({
-        tool: "falsegreen-js",
-        version: VERSION,
-        judgments: JUDGMENTS,
-        findings: findings.map((f) => ({
-          ...f, group: groupOf(f.code), fix: FIX_HINTS[f.code] ?? "",
-        })),
-      }, null, 2)
-    : renderText(findings);
+  const rendered = opt.json ? JSON.stringify(buildReport(findings), null, 2) : renderText(findings);
 
   if (opt.output) {
     const dest = resolveOutputPath(opt.output, opt.json ? "json" : "text");
