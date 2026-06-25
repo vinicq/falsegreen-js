@@ -27,7 +27,9 @@ npm install -D falsegreen-js
 npx falsegreen-js                 # scan cwd
 npx falsegreen-js src test        # scan paths
 npx falsegreen-js --staged        # only test files staged in git (pre-commit)
-npx falsegreen-js --json          # machine-readable output
+npx falsegreen-js --json          # machine-readable output (alias for --format json)
+npx falsegreen-js --format sarif  # SARIF 2.1.0 for GitHub code scanning
+npx falsegreen-js --format junit  # JUnit XML for CI test reporters
 npx falsegreen-js --output report.json   # write to a file
 npx falsegreen-js --output .falsegreen/  # write report.<ext> into a directory
 npx falsegreen-js --config-audit  # audit Jest/Vitest config (project-layer PL codes)
@@ -35,6 +37,24 @@ npx falsegreen-js --disable C7,JS3
 ```
 
 Each finding is reported with its pyramid level (unit / integration / e2e, read from the file's imports) and a one-line fix hint, and the summary breaks the findings down by level and lists the most common fixes. `--output` takes a file or a directory: an extension-less or trailing-slash path (e.g. `.falsegreen/`) receives `report.<ext>` for the chosen format. Reports are run artifacts; keep the output directory gitignored.
+
+### Output formats
+
+`--format text|json|sarif|junit` (default `text`; `--json` stays as an alias for `--format json`). These match the [Python sibling](https://github.com/vinicq/falsegreen) byte-for-concept, so a pipeline can swap one scanner for the other.
+
+- **`sarif`**: SARIF 2.1.0. One rule per code present, one result per finding, with `error` for high-severity findings, `warning` for low, and `note` for off. Result tags carry the judgment (J1-J6), the risk group (`risk:effectiveness`...), and the level (`level:high`). Upload it to GitHub code scanning to see findings inline on the PR.
+- **`junit`**: JUnit XML. High-severity findings become `<failure>`, everything else `<skipped>`, so a CI test reporter surfaces them as a failing suite.
+
+### Baseline (ratchet)
+
+Adopting the scanner on a large codebase without fixing every legacy finding at once:
+
+```bash
+npx falsegreen-js --write-baseline   # record current findings to .falsegreen-baseline.json, exit 0
+npx falsegreen-js --baseline         # report and fail only on findings not in the baseline
+```
+
+`--baseline [PATH]` and `--write-baseline [PATH]` default to `.falsegreen-baseline.json`. A finding's identity is a content fingerprint (`sha1` of relative path + code + detail, no line number), so it survives unrelated line shifts in the file. Commit the baseline, then let CI block only on net-new findings. (The fingerprint omits the source snippet the Python scanner folds in, since the js scanner does not carry one; two findings with the same code and detail in one file share an id.)
 
 `--config-audit` is a separate mode: instead of scanning test files, it reads the Jest/Vitest config (`package.json` `jest` field, `jest.config.*`, `vitest.config.*`) and reports the project-layer ways a suite stays green by configuration: `PL10` (`passWithNoTests` passes an empty or filtered-to-nothing run), `PL7` (no `coverageThreshold` / `coverage.thresholds`), `PL8` (`bail` stops the run early). The per-file scan cannot see config.
 
