@@ -115,7 +115,7 @@ line up in the research. `JS*` codes are ecosystem-specific.
 | C5  | high | always-true check (`expect(true).toBe(true)`, `assert(1)`) |
 | C6  | low  | weak check — only verifies something came back (`toBeTruthy`/`toBeDefined`, `length > 0`) |
 | C7  | high | compares a thing to itself (`expect(x).toBe(x)`) |
-| C44 | high | numeric tautology — a bound the value can never cross (`length >= 0`, `> -Infinity`, `< Infinity`) |
+| C44 | high | numeric tautology — a length compared so the result is always true (`x.length >= 0`) |
 | C20 | high | assertion in dead code after a `return`/`throw` — it never runs |
 | C23 | low  | reads a real file at a literal path, or a hard-coded URL (mystery guest) |
 | C8  | low  | exact equality on a float (use `toBeCloseTo`) |

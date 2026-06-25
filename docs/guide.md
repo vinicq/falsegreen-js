@@ -45,17 +45,16 @@ Clean: `expect(user.id).toBe(42)`. A call on a side is not flagged (`f()` may di
 ## C44 — numeric tautology (high, J2)
 
 ```ts
-expect(items.length).toBeGreaterThanOrEqual(0);   // flagged: length is never < 0
-expect(score).toBeGreaterThan(-Infinity);         // flagged: every number beats -Infinity
-expect(score).toBeLessThanOrEqual(Number.POSITIVE_INFINITY); // flagged
+expect(items.length).toBeGreaterThanOrEqual(0);   // flagged: a length is never < 0
 ```
-The bound can never be crossed, so the comparison holds for every input and verifies
-nothing. Only the provably-always-true forms fire: `length >= 0`, `> -Infinity` /
-`>= -Infinity` (and `Number.NEGATIVE_INFINITY`), `< Infinity` / `<= Infinity` (and
-`Number.POSITIVE_INFINITY`). A bound that can still be false is a real check and is not
-flagged: `expect(items.length).toBeGreaterThanOrEqual(1)` (false on an empty array),
-`expect(score).toBeLessThan(100)`. Clean: assert the value, or a bound the input can
-actually fail.
+A `.length` is never negative and never NaN, so `>= 0` holds for every input and verifies
+nothing — the JS/TS mirror of the Python `len(x) >= 0`. The subject must be a direct
+`.length` property access. A bound that can still be false is a real check and is not
+flagged: `expect(items.length).toBeGreaterThanOrEqual(1)` (false on an empty array), a
+difference of lengths `expect(a.length - b.length).toBeGreaterThanOrEqual(0)` (can be
+negative), and finiteness guards like `expect(score).toBeLessThan(Infinity)` or
+`toBeGreaterThan(-Infinity)` (false for `NaN`, so they catch divide-by-zero and
+invalid-number bugs). Clean: assert the actual length, or a bound the input can fail.
 
 ## C8 — exact equality on a float (low, J4)
 

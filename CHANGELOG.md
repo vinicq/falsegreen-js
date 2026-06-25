@@ -7,14 +7,14 @@ All notable changes to this project are documented here. The format is based on
 ## [Unreleased]
 
 ### Added
-- C44 (numeric tautology, high, J2): a numeric `expect` whose bound the value can never
-  cross, so the comparison is always true and checks nothing. Parity with the Python
-  scanner. Conservative on purpose, only the provably-always-true forms fire:
-  `expect(x.length).toBeGreaterThanOrEqual(0)` (length is never negative),
-  `toBeGreaterThan`/`toBeGreaterThanOrEqual` against `-Infinity` /
-  `Number.NEGATIVE_INFINITY`, and `toBeLessThan`/`toBeLessThanOrEqual` against `Infinity` /
-  `Number.POSITIVE_INFINITY`. A bound that can still be false (`length >= 1`, a finite
-  number) is a real check and is not flagged.
+- C44 (numeric tautology, high, J2): `expect(x.length).toBeGreaterThanOrEqual(0)`. A
+  `.length` is never negative and never NaN, so `>= 0` holds for every input and checks
+  nothing — the JS/TS mirror of the Python `len(x) >= 0`. The subject must be a direct
+  `.length` property access: a derived expression that only mentions `.length`
+  (`a.length - b.length`) can be negative and is not flagged, and a bound that can still
+  fail (`>= 1`, `> 0`) is a real check. Finiteness/NaN guards (`toBeLessThan(Infinity)`,
+  `toBeGreaterThan(-Infinity)`) are deliberately not flagged: they are false for `NaN`, so
+  they catch divide-by-zero and invalid-number bugs.
 - Output-format parity with the Python scanner: `--format text|json|sarif|junit`
   (default `text`; `--json` stays as an alias for `--format json`). SARIF 2.1.0
   emits one rule per code and one result per finding, maps high to `error`, low to

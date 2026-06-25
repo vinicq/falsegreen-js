@@ -230,24 +230,8 @@ describe("falsegreen-js rules", () => {
 
   // --- C44: numeric tautology (parity with falsegreen) --------------------
 
-  it("C44: length >= 0 is always true", () => {
+  it("C44: a direct length >= 0 is always true", () => {
     expect(codes(`test("x", () => { expect(items.length).toBeGreaterThanOrEqual(0); });`)).toContain("C44");
-  });
-
-  it("C44: toBeGreaterThan(-Infinity) is always true", () => {
-    expect(codes(`test("x", () => { expect(score).toBeGreaterThan(-Infinity); });`)).toContain("C44");
-  });
-
-  it("C44: toBeLessThan(Infinity) is always true", () => {
-    expect(codes(`test("x", () => { expect(score).toBeLessThan(Infinity); });`)).toContain("C44");
-  });
-
-  it("C44: toBeLessThanOrEqual(Number.POSITIVE_INFINITY) is always true", () => {
-    expect(codes(`test("x", () => { expect(score).toBeLessThanOrEqual(Number.POSITIVE_INFINITY); });`)).toContain("C44");
-  });
-
-  it("C44: toBeGreaterThanOrEqual(Number.NEGATIVE_INFINITY) is always true", () => {
-    expect(codes(`test("x", () => { expect(score).toBeGreaterThanOrEqual(Number.NEGATIVE_INFINITY); });`)).toContain("C44");
   });
 
   it("does not flag C44 on a meaningful length bound (look-alike)", () => {
@@ -256,9 +240,16 @@ describe("falsegreen-js rules", () => {
     expect(codes(`test("x", () => { expect(items.length).toBeGreaterThan(0); });`)).not.toContain("C44");
   });
 
-  it("does not flag C44 on a finite numeric bound (look-alike)", () => {
-    expect(codes(`test("x", () => { expect(score).toBeLessThan(100); });`)).not.toContain("C44");
-    expect(codes(`test("x", () => { expect(score).toBeGreaterThan(-1); });`)).not.toContain("C44");
+  it("does not flag C44 on a difference of lengths (can be negative)", () => {
+    // a derived expression that only mentions .length is not the direct subject.
+    const src = `test("x", () => { expect(actual.length - expected.length).toBeGreaterThanOrEqual(0); });`;
+    expect(codes(src)).not.toContain("C44");
+  });
+
+  it("does not flag C44 on a finiteness/NaN guard (false for NaN and Infinity)", () => {
+    // these can be false (NaN beats no bound), so they are meaningful guards, not tautologies.
+    expect(codes(`test("x", () => { expect(score).toBeLessThan(Infinity); });`)).not.toContain("C44");
+    expect(codes(`test("x", () => { expect(score).toBeGreaterThan(-Infinity); });`)).not.toContain("C44");
   });
 
   // --- codes added from the consolidated catalog (Lote 1 + Lote 2) ---------
