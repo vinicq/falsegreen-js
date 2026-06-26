@@ -53,6 +53,31 @@ describe("falsegreen-js rules", () => {
     expect(codes(src)).toContain("JS5");
   });
 
+  it("JS5: userEvent action not awaited", () => {
+    const src = `test("x", async () => { userEvent.click(btn); expect(true).toBe(false); });`;
+    expect(codes(src)).toContain("JS5");
+  });
+
+  it("does not flag an awaited findBy", () => {
+    const src = `test("x", async () => { await screen.findByText("hi"); expect(true).toBe(false); });`;
+    expect(codes(src)).not.toContain("JS5");
+  });
+
+  it("does not flag a returned findBy", () => {
+    const src = `test("x", async () => { return screen.findByText("hi"); });`;
+    expect(codes(src)).not.toContain("JS5");
+  });
+
+  it("does not flag an assigned findBy", () => {
+    const src = `test("x", async () => { const el = screen.findByText("hi"); expect(el).toBeTruthy(); });`;
+    expect(codes(src)).not.toContain("JS5");
+  });
+
+  it("does not flag a void-discarded findBy (author intent)", () => {
+    const src = `test("x", async () => { void screen.findByText("hi"); expect(true).toBe(false); });`;
+    expect(codes(src)).not.toContain("JS5");
+  });
+
   it("jest-dom matcher counts as an assertion (no C2b)", () => {
     const src = `test("x", () => { render(<App/>); expect(screen.getByRole("button")).toBeInTheDocument(); });`;
     expect(codes(src, "a.test.tsx")).not.toContain("C2b");

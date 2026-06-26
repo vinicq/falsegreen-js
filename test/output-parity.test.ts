@@ -135,7 +135,7 @@ describe("render dispatcher keeps --format json identical", () => {
     const findings = fixture();
     const out = JSON.parse(render(findings, "json"));
     expect(out.tool).toBe("falsegreen-js");
-    expect(out.oracleRegistryVersion).toBe(1);
+    expect(out.oracleRegistryVersion).toBe(2);
     expect(Object.keys(out.judgments).sort()).toEqual(["J1", "J2", "J3", "J4", "J5", "J6"]);
     const first = out.findings[0];
     expect(first.code).toBe("C2");

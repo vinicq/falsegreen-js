@@ -22,7 +22,7 @@
  * records which vocabulary produced it.
  */
 
-export const ORACLE_REGISTRY_VERSION = 1;
+export const ORACLE_REGISTRY_VERSION = 2;
 
 export type OracleKind = "sync-fail" | "promise" | "runner-registered" | "value-only";
 
@@ -79,6 +79,9 @@ export function oracleKind(name: string): OracleKind | null {
   if (ASSERT_ROOTS.has(root) && ASSERT_METHODS.has(leaf)) return "runner-registered";
   if (leaf === "should") return "runner-registered";
   if (leaf.startsWith("findBy") || leaf.startsWith("findAllBy")) return "value-only";
+  // @testing-library/user-event v14+: every action (click/type/keyboard/…) returns
+  // a promise that must be awaited before the resulting state can be asserted.
+  if (root === "userEvent") return "promise";
   if (ASYNC_AWAIT_LEAVES.has(leaf)) return "promise";
   if (VUE_SVELTE_ASYNC.has(leaf)) return "promise";
   return null;

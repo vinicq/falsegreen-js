@@ -3,7 +3,7 @@ import { Finding, makeFinding } from "./types.js";
 import { DIAGNOSTIC_THRESHOLDS } from "./cases.js";
 import {
   ASSERT_ROOTS, ASSERT_METHODS, SNAPSHOT_MATCHERS, EQUALITY_MATCHERS,
-  ASYNC_AWAIT_LEAVES, VUE_SVELTE_ASYNC,
+  VUE_SVELTE_ASYNC, oracleKind,
 } from "./oracles.js";
 import { lineOf } from "./parse.js";
 
@@ -12,7 +12,8 @@ import { lineOf } from "./parse.js";
 // Playwright, tap). describe/context/suite are suites. fit/fdescribe focus and
 // xit/xdescribe skip come from Jasmine/Mocha. The assertion-API vocabulary
 // (ASSERT_ROOTS/ASSERT_METHODS/SNAPSHOT_MATCHERS/EQUALITY_MATCHERS and the async
-// leaves) lives in the oracle registry (oracles.ts), imported above.
+// leaves) lives in the oracle registry (oracles.ts), imported above. JS5 routes
+// its async detection through oracleKind() instead of a hand-rolled name list.
 const TEST_BLOCK_ROOTS = new Set(["it", "test", "specify"]);
 const SUITE_ROOTS = new Set(["describe", "context", "suite", "fdescribe", "xdescribe", "fcontext", "xcontext"]);
 const FOCUS_NAMES = new Set(["fit", "fdescribe", "fcontext"]);
@@ -163,16 +164,19 @@ function expectChain(call: ts.CallExpression): ExpectChain | null {
   return null;
 }
 
-/** True if a call's result is observed: awaited, returned, assigned, or the
- *  implicit-return body of an arrow. A bare floating call (its enclosing
- *  statement is a plain ExpressionStatement) is NOT observed. Used to gate
- *  supertest `.expect()` so a floating API request still surfaces as C2b. */
+/** True if a call's result is observed: awaited, returned, assigned, the
+ *  implicit-return body of an arrow, or explicitly discarded with `void` (an
+ *  author signalling "I am dropping this on purpose"). A bare floating call (its
+ *  enclosing statement is a plain ExpressionStatement) is NOT observed. Used to
+ *  gate supertest `.expect()` so a floating API request still surfaces as C2b,
+ *  and JS5 so a dropped async query/event still surfaces. */
 function isObservedAsync(node: ts.Node): boolean {
   let cur: ts.Node = node;
   let p: ts.Node | undefined = node.parent;
   while (p) {
     if (ts.isAwaitExpression(p) || ts.isReturnStatement(p)) return true;
     if (ts.isVariableDeclaration(p) || ts.isBinaryExpression(p)) return true;
+    if (ts.isVoidExpression(p)) return true; // `void expr` — discarded on purpose
     if (ts.isArrowFunction(p) && p.body === cur) return true;
     if (ts.isExpressionStatement(p)) return false;
     cur = p;
@@ -268,18 +272,6 @@ function getTestCallback(call: ts.CallExpression): ts.FunctionLikeDeclaration | 
     if (ts.isArrowFunction(arg) || ts.isFunctionExpression(arg)) return arg;
   }
   return null;
-}
-
-// --- JS5: async query/event not awaited (Testing Library) ------------------
-// ASYNC_AWAIT_LEAVES (waitFor*) and VUE_SVELTE_ASYNC (flushPromises/nextTick/tick)
-// come from the oracle registry (oracles.ts).
-function isAsyncQueryCall(name: string): boolean {
-  const parts = name.split(".");
-  const root = parts[0];
-  const leaf = parts[parts.length - 1];
-  if (root === "userEvent") return true;
-  if (leaf.startsWith("findBy") || leaf.startsWith("findAllBy")) return true;
-  return ASYNC_AWAIT_LEAVES.has(leaf);
 }
 
 // --- C16: nondeterminism ----------------------------------------------------
@@ -561,17 +553,21 @@ export function analyze(sf: ts.SourceFile): Finding[] {
         }
       }
 
-      // JS5: async query/event used without await. Testing Library (findBy*/waitFor/
-      // user-event) plus Vue/Svelte async helpers (flushPromises/nextTick/tick) in
-      // their promise form (no callback arg) used as a bare, non-awaited statement.
-      if (isAsyncQueryCall(name) && ts.isExpressionStatement(node.parent)) {
-        push(lineOf(sf, node), "JS5", `${name} is not awaited`);
-      } else if (
-        ts.isExpressionStatement(node.parent) && node.arguments.length === 0 &&
-        VUE_SVELTE_ASYNC.has(name.split(".").pop() ?? "")
-      ) {
-        const leaf = name.split(".").pop();
-        push(lineOf(sf, node), "JS5", `${leaf}() is not awaited`);
+      // JS5: async query/event whose settled state is dropped. Detection runs
+      // through the oracle registry: a `promise` or `value-only` call (Testing
+      // Library findBy*/waitFor*, user-event, Vue/Svelte flushPromises/nextTick/
+      // tick) that is not awaited, returned, assigned, or `void`-discarded leaves
+      // the following assertion reading a stale moment. The Vue/Svelte helpers are
+      // only their promise form when called with no callback argument; nextTick(cb)
+      // is the callback form and settles on its own.
+      {
+        const kind = oracleKind(name);
+        const leaf = name.split(".").pop() ?? "";
+        const isVueSvelte = VUE_SVELTE_ASYNC.has(leaf);
+        const promiseForm = !isVueSvelte || node.arguments.length === 0;
+        if ((kind === "promise" || kind === "value-only") && promiseForm && !isObservedAsync(node)) {
+          push(lineOf(sf, node), "JS5", isVueSvelte ? `${leaf}() is not awaited` : `${name} is not awaited`);
+        }
       }
 
       // JS7: assertion inside a non-awaited setTimeout/setInterval/then callback
