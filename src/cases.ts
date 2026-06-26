@@ -185,7 +185,7 @@ export const FIX_HINTS: Record<string, string> = {
   JS4: "remove .skip/xit/todo, or implement the test",
   JS5: "await the async query/event before asserting",
   JS6: "add tests to the describe block, or remove it",
-  JS7: "await the promise/timer, or assert synchronously",
+  JS7: "await the promise, or use/flush fake timers, or assert synchronously",
   JS8: "unmock the unit under test; mock only its collaborators",
   JS9: "remove the dead branch so the assertion runs",
   JS11: "let the assertion error propagate; don't catch it",

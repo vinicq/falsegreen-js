@@ -294,7 +294,12 @@ export function analyze(sf: ts.SourceFile): Finding[] {
   const findings: Finding[] = [];
   const file = sf.fileName;
   const text = sf.getFullText();
-  const fakeTimers = /\b(useFakeTimers)\b/.test(text);
+  // Fake-timer / flush presence suppresses the JS7 timer arm: if the test fakes
+  // or drives timers anywhere, a setTimeout/setInterval callback is flushed
+  // synchronously and its assertion does run. Covers Jest, Vitest and Sinon
+  // install calls plus the explicit advance/run calls (jest/vi runAllTimers,
+  // runOnlyPendingTimers, advanceTimersByTime, sinon clock.tick).
+  const fakeTimers = /\b(useFakeTimers|installFakeTimers|runAllTimers|runOnlyPendingTimers|advanceTimersByTime|tick)\b/.test(text);
 
   const push = (line: number, code: string, detail = ""): void => {
     findings.push(makeFinding(file, line, code, detail));
@@ -570,7 +575,13 @@ export function analyze(sf: ts.SourceFile): Finding[] {
         }
       }
 
-      // JS7: assertion inside a non-awaited setTimeout/setInterval/then callback
+      // JS7: a deferred assertion. One code, two mechanisms tagged in `detail`:
+      //   timer arm   — assertion in a setTimeout/setInterval callback that is
+      //                 never flushed (no fake-timer/advance call in the test),
+      //                 so it runs after the test reports green.
+      //   promise arm — assertion in a floating .then/.catch/.finally (the call
+      //                 is a bare statement, not awaited/returned/chained), so it
+      //                 may not run before the test ends.
       {
         const leaf = name.split(".").pop() ?? "";
         const isTimer = name === "setTimeout" || name === "setInterval";
@@ -580,9 +591,11 @@ export function analyze(sf: ts.SourceFile): Finding[] {
           if (cb && containsAssertion(cb)) {
             const awaitedOrChained = !ts.isExpressionStatement(node.parent);
             if (isTimer && !fakeTimers) {
-              push(lineOf(sf, node), "JS7", `assertion inside a non-awaited ${name}() callback`);
+              push(lineOf(sf, node), "JS7",
+                `assertion deferred into ${name}; runs after the test ends`);
             } else if (isThen && !awaitedOrChained) {
-              push(lineOf(sf, node), "JS7", `assertion inside a non-awaited .${leaf}() callback`);
+              push(lineOf(sf, node), "JS7",
+                `assertion deferred into a floating .${leaf}(); may not run before the test ends`);
             }
           }
         }
