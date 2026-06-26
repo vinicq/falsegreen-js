@@ -14,6 +14,8 @@ AST scan, no code execution. Sibling of [`falsegreen`](https://github.com/vinicq
 
 Covers `.js`, `.jsx`, `.ts`, `.tsx`, `.mjs`, `.cjs`, `.mts`, `.cts`.
 
+**The falsegreen family:** [falsegreen](https://github.com/vinicq/falsegreen) (Python/pytest) · **falsegreen-js** (JS/TS) · [robotframework-falsegreen](https://github.com/vinicq/robotframework-falsegreen) (Robot Framework) · [falsegreen-skill](https://github.com/vinicq/falsegreen-skill) (semantic LLM pass).
+
 ## Why
 
 A test can be green and still protect nothing: an empty body, an assertion that is
