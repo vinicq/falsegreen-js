@@ -75,6 +75,7 @@ describe("oracle registry", () => {
     expect(oracleKind("screen.findByText")).toBe("value-only");
     expect(oracleKind("waitFor")).toBe("promise");
     expect(oracleKind("flushPromises")).toBe("promise");
+    expect(oracleKind("userEvent.click")).toBe("promise");
     expect(oracleKind("notAnOracle")).toBeNull();
   });
 });
