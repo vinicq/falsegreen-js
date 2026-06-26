@@ -234,6 +234,8 @@ test re-implements the production logic. Those are semantic and belong to the
 `falsegreen-skill` LLM pass. Precision over recall: a softened heuristic that misses a
 case is preferred to one that flags correct code.
 
+Measured against the [Open Catalog of Test Smells](https://test-smell-catalog.readthedocs.io/) (517 documented smells), only the false-green slice is in scope. What stays out, on purpose: **brittleness / false-red** (sensitive equality, brittle assertions - the opposite axis), **hygiene / maintainability** (assertion roulette, magic numbers, long tests - linter territory, a few surfaced as opt-in diagnostics), and **slow, design, naming, duplication, runtime/culture** (none about whether the test protects). The boundary is deliberate: where a smell has a statically provable false-green form, that form is a code here - uncontrolled `Date.now`/`Math.random` is `C16`, a hard-coded path or URL is `C23`, an assertion that may never run is `C21`/`C20`, and JS-specific forms (focused tests, missing matchers) are the `JS*` codes. See [CREDITS.md](CREDITS.md) for the full cross-walk.
+
 ## References
 
 The catalog is grounded in the test-smell literature. Direct influences: the
