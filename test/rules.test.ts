@@ -7,6 +7,10 @@ function codes(src: string, file = "x.test.ts"): string[] {
   return analyze(parse(file, src)).map((f) => f.code);
 }
 
+function detail(src: string, code: string, file = "x.test.ts"): string | undefined {
+  return analyze(parse(file, src)).find((f) => f.code === code)?.detail;
+}
+
 describe("falsegreen-js rules", () => {
   it("C2: empty test body", () => {
     expect(codes(`test("nothing", () => {});`)).toContain("C2");
@@ -122,8 +126,32 @@ describe("falsegreen-js rules", () => {
     expect(codes(src)).not.toContain("C21");
   });
 
-  it("JS7: assertion inside a non-awaited setTimeout callback", () => {
-    expect(codes(`test("x", () => { setTimeout(() => { expect(a).toBe(b); }, 10); });`)).toContain("JS7");
+  it("JS7 timer arm: assertion in an unflushed setTimeout callback", () => {
+    const src = `test("x", () => { setTimeout(() => { expect(a).toBe(b); }, 10); });`;
+    expect(codes(src)).toContain("JS7");
+    expect(detail(src, "JS7")).toMatch(/deferred into setTimeout/);
+  });
+
+  it("JS7 timer arm: not flagged when timers are faked/flushed", () => {
+    const jest = `test("x", () => { jest.runAllTimers(); setTimeout(() => { expect(a).toBe(b); }, 10); });`;
+    const vi = `test("x", () => { vi.useFakeTimers(); setTimeout(() => { expect(a).toBe(b); }, 10); });`;
+    const sinon = `test("x", () => { const c = sinon.useFakeTimers(); setTimeout(() => { expect(a).toBe(b); }, 10); c.tick(10); });`;
+    expect(codes(jest)).not.toContain("JS7");
+    expect(codes(vi)).not.toContain("JS7");
+    expect(codes(sinon)).not.toContain("JS7");
+  });
+
+  it("JS7 promise arm: assertion in a floating .then", () => {
+    const src = `test("x", () => { load().then(() => { expect(a).toBe(b); }); });`;
+    expect(codes(src)).toContain("JS7");
+    expect(detail(src, "JS7")).toMatch(/floating \.then\(\)/);
+  });
+
+  it("JS7 promise arm: not flagged when the chain is returned or awaited", () => {
+    const returned = `test("x", () => { return load().then(() => { expect(a).toBe(b); }); });`;
+    const awaited = `test("x", async () => { await load().then(() => { expect(a).toBe(b); }); });`;
+    expect(codes(returned)).not.toContain("JS7");
+    expect(codes(awaited)).not.toContain("JS7");
   });
 
   it("custom assertion helper (util.assertEqual) is not C2b", () => {
