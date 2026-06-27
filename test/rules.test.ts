@@ -186,6 +186,50 @@ describe("falsegreen-js rules", () => {
     expect(codes(src).filter((c) => c === "JS7")).toHaveLength(1);
   });
 
+  it("JS7 timer arm: install in beforeEach hook controls the timer (not flagged)", () => {
+    const src = `describe("s", () => {
+      beforeEach(() => { jest.useFakeTimers(); });
+      afterEach(() => { jest.runAllTimers(); });
+      it("x", () => { setTimeout(() => { expect(a).toBe(1); }, 0); });
+    });`;
+    expect(codes(src)).not.toContain("JS7");
+  });
+
+  it("JS7 timer arm: flush in afterAll hook controls the timer (not flagged)", () => {
+    const src = `describe("s", () => {
+      afterAll(() => { jest.runOnlyPendingTimers(); });
+      it("x", () => { setTimeout(() => { expect(a).toBe(1); }, 0); });
+    });`;
+    expect(codes(src)).not.toContain("JS7");
+  });
+
+  it("JS7 timer arm: install in an enclosing outer describe's beforeAll controls it", () => {
+    const src = `describe("outer", () => {
+      beforeAll(() => { vi.useFakeTimers(); });
+      describe("inner", () => {
+        it("x", () => { setTimeout(() => { expect(a).toBe(1); }, 0); });
+      });
+    });`;
+    expect(codes(src)).not.toContain("JS7");
+  });
+
+  it("JS7 timer arm: no hook control and no in-test flush still flags", () => {
+    const src = `describe("s", () => {
+      beforeEach(() => { setup(); });
+      it("x", () => { setTimeout(() => { expect(a).toBe(1); }, 0); });
+    });`;
+    expect(codes(src)).toContain("JS7");
+  });
+
+  it("JS7 timer arm: flush in beforeEach (wrong hook kind) does not control it", () => {
+    // a flush only helps when it runs AFTER the test body — i.e. in a teardown hook.
+    const src = `describe("s", () => {
+      beforeEach(() => { jest.runAllTimers(); });
+      it("x", () => { setTimeout(() => { expect(a).toBe(1); }, 0); });
+    });`;
+    expect(codes(src)).toContain("JS7");
+  });
+
   it("JS7 promise arm: assertion in a floating .then", () => {
     const src = `test("x", () => { load().then(() => { expect(a).toBe(b); }); });`;
     expect(codes(src)).toContain("JS7");

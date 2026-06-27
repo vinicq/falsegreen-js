@@ -308,11 +308,60 @@ function enclosingTestScope(node: ts.Node): ts.Node {
 const FAKE_TIMER_INSTALL = /\b(useFakeTimers|installFakeTimers)\b/;
 const FAKE_TIMER_FLUSH = /\b(runAllTimers|runOnlyPendingTimers|advanceTimersByTime|tick)\b/;
 
+const SETUP_HOOKS = new Set(["beforeEach", "beforeAll"]);
+const TEARDOWN_HOOKS = new Set(["afterEach", "afterAll"]);
+
+/** True if any call under `scope` matches `re`. */
+function callMatchesUnder(scope: ts.Node, sf: ts.SourceFile, re: RegExp): boolean {
+  let found = false;
+  const walk = (n: ts.Node): void => {
+    if (found) return;
+    if (ts.isCallExpression(n) && re.test(calleeName(n.expression))) { found = true; return; }
+    ts.forEachChild(n, walk);
+  };
+  walk(scope);
+  return found;
+}
+
+/** A timer can be driven from a sibling lifecycle hook rather than the test body:
+ *  a fake-timer install in a beforeEach/beforeAll always runs before the test, and
+ *  a flush/advance in an afterEach/afterAll always runs after it. Walk every
+ *  enclosing describe/suite and look for the right call in the right hook kind.
+ *  Order inside the hook does not matter — the hook itself is sequenced around the
+ *  test body by the runner. */
+function hookControlsTimer(timer: ts.CallExpression, sf: ts.SourceFile): boolean {
+  let p: ts.Node | undefined = timer.parent;
+  while (p) {
+    // The body of an enclosing describe/suite callback: scan its top-level hook calls.
+    if (
+      (ts.isArrowFunction(p) || ts.isFunctionExpression(p) || ts.isFunctionDeclaration(p)) &&
+      p.parent && ts.isCallExpression(p.parent) &&
+      p.parent.arguments.includes(p as ts.Expression)
+    ) {
+      const suiteRoot = calleeName(p.parent.expression).split(".")[0];
+      if (SUITE_ROOTS.has(suiteRoot) && p.body && ts.isBlock(p.body)) {
+        for (const stmt of p.body.statements) {
+          if (!ts.isExpressionStatement(stmt) || !ts.isCallExpression(stmt.expression)) continue;
+          const hook = calleeName(stmt.expression.expression).split(".")[0];
+          const cb = getTestCallback(stmt.expression);
+          if (!cb) continue;
+          if (SETUP_HOOKS.has(hook) && callMatchesUnder(cb, sf, FAKE_TIMER_INSTALL)) return true;
+          if (TEARDOWN_HOOKS.has(hook) && callMatchesUnder(cb, sf, FAKE_TIMER_FLUSH)) return true;
+        }
+      }
+    }
+    p = p.parent;
+  }
+  return false;
+}
+
 /** Precise replacement for the old file-wide fake-timer suppression. A
- *  setTimeout/setInterval is "controlled" only when, inside the same enclosing
- *  test callback, either a fake-timer install runs BEFORE it, or a flush/advance
- *  call runs AFTER it. A flush before the arm (callback never ran) or a flush in
- *  a different test does not count. */
+ *  setTimeout/setInterval is "controlled" when, inside the same enclosing test
+ *  callback, either a fake-timer install runs BEFORE it or a flush/advance call
+ *  runs AFTER it; OR when an enclosing describe drives the timer through a sibling
+ *  hook (install in beforeEach/beforeAll, flush in afterEach/afterAll). A flush
+ *  before the arm (callback never ran) or a flush in a different test does not
+ *  count. */
 function timerIsControlled(timer: ts.CallExpression, sf: ts.SourceFile): boolean {
   const scope = enclosingTestScope(timer);
   const armPos = timer.getStart(sf);
@@ -328,7 +377,8 @@ function timerIsControlled(timer: ts.CallExpression, sf: ts.SourceFile): boolean
     ts.forEachChild(n, walk);
   };
   walk(scope);
-  return controlled;
+  if (controlled) return true;
+  return hookControlsTimer(timer, sf);
 }
 
 // --- C16: nondeterminism ----------------------------------------------------
