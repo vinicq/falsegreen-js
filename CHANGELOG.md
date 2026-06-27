@@ -6,6 +6,12 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+### Tests
+- Lock the floating `expect(p).resolves`/`.rejects.<matcher>()` case for `JS5`: a non-awaited
+  promise matcher is already flagged through the oracle registry (the matcher builds a promise
+  that never settles before the test ends), and tests now pin that, including an exact-count
+  guard so a future change cannot double-report it. Awaited/returned forms stay clean (#43).
+
 ### Added
 - `C48` (dark patch): a test that flips a known test-mode flag into test mode and then
   asserts is exercising the product's test-only branch, not real behaviour. Detection-only;
