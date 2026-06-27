@@ -82,6 +82,26 @@ describe("falsegreen-js rules", () => {
     expect(codes(src)).not.toContain("JS5");
   });
 
+  it("JS5: findBy under a || still floats the promise", () => {
+    const src = `test("x", async () => { screen.findByText("Saved") || expect(x).toBe(1); });`;
+    expect(codes(src)).toContain("JS5");
+  });
+
+  it("JS5: findBy compared with === still floats the promise", () => {
+    const src = `test("x", async () => { screen.findByText("Saved") === ready; expect(true).toBe(false); });`;
+    expect(codes(src)).toContain("JS5");
+  });
+
+  it("does not flag a real-assignment findBy (compound +=)", () => {
+    const src = `test("x", async () => { let p; p = screen.findByText("hi"); expect(true).toBe(false); });`;
+    expect(codes(src)).not.toContain("JS5");
+  });
+
+  it("does not flag an awaited findBy on the RHS of an assignment", () => {
+    const src = `test("x", async () => { let x; x = await screen.findByText("hi"); expect(true).toBe(false); });`;
+    expect(codes(src)).not.toContain("JS5");
+  });
+
   it("jest-dom matcher counts as an assertion (no C2b)", () => {
     const src = `test("x", () => { render(<App/>); expect(screen.getByRole("button")).toBeInTheDocument(); });`;
     expect(codes(src, "a.test.tsx")).not.toContain("C2b");
@@ -133,12 +153,102 @@ describe("falsegreen-js rules", () => {
   });
 
   it("JS7 timer arm: not flagged when timers are faked/flushed", () => {
-    const jest = `test("x", () => { jest.runAllTimers(); setTimeout(() => { expect(a).toBe(b); }, 10); });`;
+    // install BEFORE the arm, or flush AFTER it, in the same test callback.
+    const jest = `test("x", () => { jest.useFakeTimers(); setTimeout(() => { expect(a).toBe(b); }, 10); jest.runAllTimers(); });`;
     const vi = `test("x", () => { vi.useFakeTimers(); setTimeout(() => { expect(a).toBe(b); }, 10); });`;
     const sinon = `test("x", () => { const c = sinon.useFakeTimers(); setTimeout(() => { expect(a).toBe(b); }, 10); c.tick(10); });`;
     expect(codes(jest)).not.toContain("JS7");
     expect(codes(vi)).not.toContain("JS7");
     expect(codes(sinon)).not.toContain("JS7");
+  });
+
+  it("JS7 timer arm: flush BEFORE the arm still flags (callback never ran)", () => {
+    const src = `test("x", () => { jest.runAllTimers(); setTimeout(() => { expect(x).toBe(1); }, 10); });`;
+    expect(codes(src)).toContain("JS7");
+  });
+
+  it("JS7 timer arm: flush AFTER the arm is not flagged", () => {
+    const src = `test("x", () => { setTimeout(() => { expect(x).toBe(1); }, 10); jest.runAllTimers(); });`;
+    expect(codes(src)).not.toContain("JS7");
+  });
+
+  it("JS7 timer arm: install before + flush after is not flagged", () => {
+    const src = `test("x", () => { jest.useFakeTimers(); setTimeout(() => { expect(x).toBe(1); }, 10); jest.runAllTimers(); });`;
+    expect(codes(src)).not.toContain("JS7");
+  });
+
+  it("JS7 timer arm: a flush in another test does not suppress this one", () => {
+    const src = [
+      `test("a", () => { jest.useFakeTimers(); setTimeout(() => { expect(a).toBe(b); }, 10); jest.runAllTimers(); });`,
+      `test("b", () => { setTimeout(() => { expect(x).toBe(1); }, 10); });`,
+    ].join("\n");
+    // test b has no flush/install in its own callback, so it stays flagged.
+    expect(codes(src).filter((c) => c === "JS7")).toHaveLength(1);
+  });
+
+  it("JS7 timer arm: install in beforeEach hook controls the timer (not flagged)", () => {
+    const src = `describe("s", () => {
+      beforeEach(() => { jest.useFakeTimers(); });
+      afterEach(() => { jest.runAllTimers(); });
+      it("x", () => { setTimeout(() => { expect(a).toBe(1); }, 0); });
+    });`;
+    expect(codes(src)).not.toContain("JS7");
+  });
+
+  it("JS7 timer arm: flush in afterAll hook controls the timer (not flagged)", () => {
+    const src = `describe("s", () => {
+      afterAll(() => { jest.runOnlyPendingTimers(); });
+      it("x", () => { setTimeout(() => { expect(a).toBe(1); }, 0); });
+    });`;
+    expect(codes(src)).not.toContain("JS7");
+  });
+
+  it("JS7 timer arm: install in an enclosing outer describe's beforeAll controls it", () => {
+    const src = `describe("outer", () => {
+      beforeAll(() => { vi.useFakeTimers(); });
+      describe("inner", () => {
+        it("x", () => { setTimeout(() => { expect(a).toBe(1); }, 0); });
+      });
+    });`;
+    expect(codes(src)).not.toContain("JS7");
+  });
+
+  it("JS7 timer arm: top-level beforeEach install (outside any describe) controls it", () => {
+    // Top-level hooks wrap every test in the file, so an install there drives the timer.
+    const src = `beforeEach(() => { jest.useFakeTimers(); });
+      afterEach(() => { jest.runAllTimers(); });
+      it("x", () => { setTimeout(() => { expect(a).toBe(1); }, 0); });`;
+    expect(codes(src)).not.toContain("JS7");
+  });
+
+  it("JS7 timer arm: top-level afterEach flush (outside any describe) controls it", () => {
+    const src = `afterEach(() => { jest.runOnlyPendingTimers(); });
+      test("x", () => { setTimeout(() => { expect(a).toBe(1); }, 0); });`;
+    expect(codes(src)).not.toContain("JS7");
+  });
+
+  it("JS7 timer arm: top-level beforeEach without timer call still flags", () => {
+    // a top-level hook that does not touch fake timers must not suppress JS7.
+    const src = `beforeEach(() => { setup(); });
+      it("x", () => { setTimeout(() => { expect(a).toBe(1); }, 0); });`;
+    expect(codes(src)).toContain("JS7");
+  });
+
+  it("JS7 timer arm: no hook control and no in-test flush still flags", () => {
+    const src = `describe("s", () => {
+      beforeEach(() => { setup(); });
+      it("x", () => { setTimeout(() => { expect(a).toBe(1); }, 0); });
+    });`;
+    expect(codes(src)).toContain("JS7");
+  });
+
+  it("JS7 timer arm: flush in beforeEach (wrong hook kind) does not control it", () => {
+    // a flush only helps when it runs AFTER the test body — i.e. in a teardown hook.
+    const src = `describe("s", () => {
+      beforeEach(() => { jest.runAllTimers(); });
+      it("x", () => { setTimeout(() => { expect(a).toBe(1); }, 0); });
+    });`;
+    expect(codes(src)).toContain("JS7");
   });
 
   it("JS7 promise arm: assertion in a floating .then", () => {
