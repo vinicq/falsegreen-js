@@ -76,6 +76,7 @@ export const CASES: Record<string, CaseDef> = {
   C9:  { title: "expect(...).toThrow() with no error type or message — accepts any error", group: "effectiveness", severity: "low", defaultOn: true, judgment: "J4" },
   C37: { title: "duplicate case in it.each/test.each — the same scenario runs twice", group: "effectiveness", severity: "low", defaultOn: true, judgment: "J4" },
   CC:  { title: "commented-out assertion (check switched off)", group: "execution", severity: "low", defaultOn: true, judgment: "J1" },
+  C48: { title: "dark patch — the test flips a test-mode flag (process.env.NODE_ENV=\"test\", process.env.TESTING, a TESTING flag) then asserts, exercising the product's test-only branch", group: "execution", severity: "low", defaultOn: true, judgment: "J1" },
 
   // --- JS/TS ecosystem-specific --------------------------------------------
   JS1: { title: "focused test (it.only / fit / describe.only) silently skips the rest of the suite", group: "execution", severity: "high", defaultOn: true, judgment: "J1" },
@@ -179,6 +180,7 @@ export const FIX_HINTS: Record<string, string> = {
   C9:  "pass an error type or message to toThrow()",
   C37: "remove the duplicate it.each/test.each case",
   CC:  "restore the commented-out assertion, or delete it",
+  C48: "assert the behaviour a real user hits; don't force the product's test-mode branch from the test",
   JS1: "remove .only (it.only/fit/describe.only) so the whole suite runs",
   JS2: "add a matcher (expect(x).toBe(...)) so the assertion runs",
   JS3: "add a real assertion; don't rely only on a self-generated snapshot",

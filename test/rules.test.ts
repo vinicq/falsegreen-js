@@ -377,6 +377,47 @@ describe("falsegreen-js rules", () => {
     expect(codes(`test("x", () => { const r = fetch("https://api.example.com/u"); expect(r).toBeDefined(); });`)).toContain("C23");
   });
 
+  // --- C48: dark patch (test flips a test-mode flag then asserts) ----------
+  it("C48: sets process.env.NODE_ENV=test then asserts", () => {
+    expect(codes(`test("x", () => { process.env.NODE_ENV = "test"; expect(feature()).toBe("ok"); });`)).toContain("C48");
+  });
+
+  it("C48: sets process.env.TESTING then asserts", () => {
+    expect(codes(`test("x", () => { process.env.TESTING = "1"; expect(run()).toBe(1); });`)).toContain("C48");
+  });
+
+  it("C48: process.env[\"TEST_MODE\"] bracket form then asserts", () => {
+    expect(codes(`test("x", () => { process.env["TEST_MODE"] = "true"; expect(run()).toBe(1); });`)).toContain("C48");
+  });
+
+  it("C48: module/settings flag settings.TESTING=true then asserts", () => {
+    expect(codes(`test("x", () => { settings.TESTING = true; expect(run()).toBe(1); });`)).toContain("C48");
+  });
+
+  it("does not flag C48 for a config value (DATABASE_URL)", () => {
+    expect(codes(`test("x", () => { process.env.DATABASE_URL = "sqlite://"; expect(run()).toBe(1); });`)).not.toContain("C48");
+  });
+
+  it("does not flag C48 for NODE_ENV set to production", () => {
+    expect(codes(`test("x", () => { process.env.NODE_ENV = "production"; expect(run()).toBe(1); });`)).not.toContain("C48");
+  });
+
+  it("does not flag C48 for a product feature flag", () => {
+    expect(codes(`test("x", () => { settings.FEATURE_X = true; expect(run()).toBe(1); });`)).not.toContain("C48");
+  });
+
+  it("does not flag C48 when the flag write has no assertion after it", () => {
+    expect(codes(`test("x", () => { process.env.TESTING = "1"; doSetup(); });`)).not.toContain("C48");
+  });
+
+  it("does not flag C48 when the assertion comes before the toggle", () => {
+    expect(codes(`test("x", () => { expect(run()).toBe(1); process.env.TESTING = "1"; });`)).not.toContain("C48");
+  });
+
+  it("does not flag C48 for this.TESTING (instance state)", () => {
+    expect(codes(`test("x", function () { this.TESTING = true; expect(run()).toBe(1); });`)).not.toContain("C48");
+  });
+
   it("C23: reads a real file at a literal path", () => {
     expect(codes(`test("x", () => { const d = readFileSync("/var/data/fixture.json"); expect(d).toBe(1); });`)).toContain("C23");
   });

@@ -6,6 +6,14 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+### Added
+- `C48` (dark patch): a test that flips a known test-mode flag into test mode and then
+  asserts is exercising the product's test-only branch, not real behaviour. Detection-only;
+  v1 covers raw writes (`process.env.NODE_ENV = "test"`, `process.env.TESTING = "1"`,
+  `settings.TESTING = true`). `NODE_ENV` only counts as `"test"`; config values and product
+  feature flags are not flagged; a flag write with no assertion after it is setup, not a dark
+  patch. Parity with falsegreen (Python) `C48`, same id and J1/low (#39).
+
 ## [0.4.0] - 2026-06-27
 
 ### Fixed
