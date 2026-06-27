@@ -19,6 +19,18 @@ const SUITE_ROOTS = new Set(["describe", "context", "suite", "fdescribe", "xdesc
 const FOCUS_NAMES = new Set(["fit", "fdescribe", "fcontext"]);
 const SKIP_NAMES = new Set(["xit", "xdescribe", "xcontext", "xspecify"]);
 
+// --- C48 dark-patch: a test that flips a known test-mode flag then asserts ---
+// env keys (process.env.<KEY> = <test-mode value>) whose name means "we are under
+// test". NODE_ENV only counts when set to "test" (production/development are real
+// configs); CI is excluded (infra, not a product branch).
+const ENV_TEST_MODE_KEYS = new Set([
+  "NODE_ENV", "JEST_WORKER_ID", "VITEST", "TEST", "TESTING", "TEST_MODE",
+  "TESTMODE", "UNDER_TEST", "IS_TEST",
+]);
+// module/settings flag names (settings.TESTING = true, config.TEST_MODE = true).
+const MODULE_TEST_MODE_RE = /^(TESTING|TEST_MODE|IS_TEST|UNDER_TEST|_TESTING)$/;
+const TEST_MODE_TRUE_STRINGS = new Set(["1", "true", "test", "yes", "on"]);
+
 // --- name helpers ----------------------------------------------------------
 function calleeName(expr: ts.Expression): string {
   if (ts.isIdentifier(expr)) return expr.text;
@@ -241,6 +253,49 @@ function hasAssertion(scope: ts.Node): boolean {
 /** Like hasAssertion but tests the node itself too (for branch/try-block subtrees). */
 function containsAssertion(node: ts.Node): boolean {
   return isAssertionNode(node) || hasAssertion(node);
+}
+
+/** Visit descendants of `node` without entering nested function scopes (a helper
+ *  def/arrow/method in the test body is its own scope, not the test's). */
+function forEachNoNesting(node: ts.Node, visit: (n: ts.Node) => void): void {
+  ts.forEachChild(node, (child) => {
+    visit(child);
+    if (!ts.isFunctionLike(child)) forEachNoNesting(child, visit);
+  });
+}
+
+/** The env key of a `process.env.KEY = ...` / `process.env["KEY"] = ...` target, else null. */
+function envAssignKey(lhs: ts.Expression): string | null {
+  const isProcessEnv = (e: ts.Expression): boolean =>
+    ts.isPropertyAccessExpression(e) && e.name.text === "env" &&
+    ts.isIdentifier(e.expression) && e.expression.text === "process";
+  if (ts.isPropertyAccessExpression(lhs) && isProcessEnv(lhs.expression)) return lhs.name.text;
+  if (ts.isElementAccessExpression(lhs) && isProcessEnv(lhs.expression) &&
+      ts.isStringLiteralLike(lhs.argumentExpression)) return lhs.argumentExpression.text;
+  return null;
+}
+
+/** A value that puts a test-mode flag into test mode. NODE_ENV only counts as "test";
+ *  every other key takes true/1/"1"/"true"/"test"/"yes"/"on". */
+function isTestModeValue(rhs: ts.Expression, key: string): boolean {
+  if (key === "NODE_ENV") return ts.isStringLiteralLike(rhs) && rhs.text === "test";
+  if (rhs.kind === ts.SyntaxKind.TrueKeyword) return true;
+  if (ts.isNumericLiteral(rhs)) return rhs.text === "1";
+  if (ts.isStringLiteralLike(rhs)) return TEST_MODE_TRUE_STRINGS.has(rhs.text.trim().toLowerCase());
+  return false;
+}
+
+/** True if `bin` is a raw write that flips a known test-mode toggle into test mode:
+ *  process.env.<KEY> = <test value>, or <obj>.TESTING = <truthy> (obj not `this`). */
+function isTestModeToggleWrite(bin: ts.BinaryExpression): boolean {
+  if (bin.operatorToken.kind !== ts.SyntaxKind.EqualsToken) return false;
+  const lhs = bin.left;
+  const envKey = envAssignKey(lhs);
+  if (envKey && ENV_TEST_MODE_KEYS.has(envKey) && isTestModeValue(bin.right, envKey)) return true;
+  if (ts.isPropertyAccessExpression(lhs) && MODULE_TEST_MODE_RE.test(lhs.name.text) &&
+      lhs.expression.kind !== ts.SyntaxKind.ThisKeyword &&
+      isTestModeValue(bin.right, lhs.name.text)) return true;
+  return false;
 }
 
 /** True if a catch block does nothing meaningful: empty, or only console.* /
@@ -489,6 +544,23 @@ export function analyze(sf: ts.SourceFile): Finding[] {
             }
             if (ts.isReturnStatement(st) || ts.isThrowStatement(st)) terminated = true;
           }
+          // C48: dark patch — the test flips a known test-mode flag (process.env or a
+          // module/settings flag) into test mode and then asserts, exercising the
+          // product's test-only branch instead of real behaviour. v1: raw writes only.
+          const toggles: { pos: number; line: number }[] = [];
+          const assertPositions: number[] = [];
+          forEachNoNesting(cb.body, (n) => {
+            if (ts.isBinaryExpression(n) && isTestModeToggleWrite(n)) {
+              toggles.push({ pos: n.getStart(sf), line: lineOf(sf, n) });
+            }
+            if (isAssertionNode(n)) assertPositions.push(n.getStart(sf));
+          });
+          for (const w of toggles) {
+            if (assertPositions.some((ap) => ap > w.pos)) {
+              push(w.line, "C48", "test sets a test-mode flag then asserts — drive real behaviour, not the test-only branch");
+            }
+          }
+
           if (stmts.length === 0) {
             push(line, "C2", "test body is empty");
           } else if (!hasAssertion(cb) && containsCall(cb.body)) {

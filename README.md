@@ -134,6 +134,7 @@ line up in the research. `JS*` codes are ecosystem-specific.
 | C18 | low  | compares `String(x)` / `JSON.stringify(x)` / `` `${x}` `` to a literal (formatting, not value) |
 | C21 | low  | every assertion is conditional — none runs unconditionally |
 | C37 | low  | duplicate case in `it.each`/`test.each` — the same scenario runs twice |
+| C48 | low  | dark patch — the test flips a test-mode flag (`process.env.NODE_ENV = "test"`, `process.env.TESTING`, a `TESTING` flag) then asserts, exercising the product's test-only branch |
 | CC  | low  | commented-out assertion |
 | JS1 | high | focused test (`it.only` / `fit`) silently skips the rest of the suite |
 | JS2 | high | `expect(x)` with no matcher — the assertion never runs |
@@ -202,7 +203,7 @@ Some catalog codes were reviewed and left out, on purpose:
 
 ### What carries over from falsegreen, what does not
 
-Ported (same concept): C2, C2b, C5, C7, C8, C16, C44, CC.
+Ported (same concept): C2, C2b, C5, C7, C8, C16, C44, C48, CC.
 
 Python-only, not applicable to JS/TS: pytest collection rules (C4 family), `pytest.raises`
 breadth (C9/C19/C27/C28), fixtures and `os.environ`/global-state codes (C23/C24/C29),
