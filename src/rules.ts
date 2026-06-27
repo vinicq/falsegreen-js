@@ -175,7 +175,17 @@ function isObservedAsync(node: ts.Node): boolean {
   let p: ts.Node | undefined = node.parent;
   while (p) {
     if (ts.isAwaitExpression(p) || ts.isReturnStatement(p)) return true;
-    if (ts.isVariableDeclaration(p) || ts.isBinaryExpression(p)) return true;
+    if (ts.isVariableDeclaration(p)) return true;
+    // A BinaryExpression only observes the call when it is a real assignment
+    // (`=` or a compound `+=` etc., kinds in FirstAssignment..LastAssignment) and
+    // the call is the right-hand side. A logical/comparison/arithmetic operator
+    // (`||`, `&&`, `===`, `+`, ...) does NOT observe it: `findBy*() || expect(...)`
+    // still floats the promise and must surface as JS5.
+    if (ts.isBinaryExpression(p)) {
+      const k = p.operatorToken.kind;
+      const isAssign = k >= ts.SyntaxKind.FirstAssignment && k <= ts.SyntaxKind.LastAssignment;
+      if (isAssign && p.right === cur) return true;
+    }
     if (ts.isVoidExpression(p)) return true; // `void expr` — discarded on purpose
     if (ts.isArrowFunction(p) && p.body === cur) return true;
     if (ts.isExpressionStatement(p)) return false;
@@ -272,6 +282,53 @@ function getTestCallback(call: ts.CallExpression): ts.FunctionLikeDeclaration | 
     if (ts.isArrowFunction(arg) || ts.isFunctionExpression(arg)) return arg;
   }
   return null;
+}
+
+/** The function body that encloses `node` for timer-flush scoping: the nearest
+ *  ancestor arrow/function that is the callback of an it/test/specify call (so a
+ *  flush in one test never reaches a timer in another), falling back to the
+ *  nearest enclosing function, then the whole source file. */
+function enclosingTestScope(node: ts.Node): ts.Node {
+  let fallback: ts.Node | null = null;
+  let p: ts.Node | undefined = node.parent;
+  while (p) {
+    if (ts.isArrowFunction(p) || ts.isFunctionExpression(p) || ts.isFunctionDeclaration(p)) {
+      if (!fallback) fallback = p;
+      const call = p.parent;
+      if (call && ts.isCallExpression(call) && call.arguments.includes(p as ts.Expression)) {
+        const root = calleeName(call.expression).split(".")[0];
+        if (TEST_BLOCK_ROOTS.has(root) || root === "fit" || root === "xit") return p;
+      }
+    }
+    p = p.parent;
+  }
+  return fallback ?? node.getSourceFile();
+}
+
+const FAKE_TIMER_INSTALL = /\b(useFakeTimers|installFakeTimers)\b/;
+const FAKE_TIMER_FLUSH = /\b(runAllTimers|runOnlyPendingTimers|advanceTimersByTime|tick)\b/;
+
+/** Precise replacement for the old file-wide fake-timer suppression. A
+ *  setTimeout/setInterval is "controlled" only when, inside the same enclosing
+ *  test callback, either a fake-timer install runs BEFORE it, or a flush/advance
+ *  call runs AFTER it. A flush before the arm (callback never ran) or a flush in
+ *  a different test does not count. */
+function timerIsControlled(timer: ts.CallExpression, sf: ts.SourceFile): boolean {
+  const scope = enclosingTestScope(timer);
+  const armPos = timer.getStart(sf);
+  let controlled = false;
+  const walk = (n: ts.Node): void => {
+    if (controlled) return;
+    if (ts.isCallExpression(n)) {
+      const name = calleeName(n.expression);
+      const pos = n.getStart(sf);
+      if (FAKE_TIMER_INSTALL.test(name) && pos < armPos) { controlled = true; return; }
+      if (FAKE_TIMER_FLUSH.test(name) && pos > armPos) { controlled = true; return; }
+    }
+    ts.forEachChild(n, walk);
+  };
+  walk(scope);
+  return controlled;
 }
 
 // --- C16: nondeterminism ----------------------------------------------------
@@ -577,8 +634,12 @@ export function analyze(sf: ts.SourceFile): Finding[] {
 
       // JS7: a deferred assertion. One code, two mechanisms tagged in `detail`:
       //   timer arm   — assertion in a setTimeout/setInterval callback that is
-      //                 never flushed (no fake-timer/advance call in the test),
-      //                 so it runs after the test reports green.
+      //                 never flushed. Suppression is precise (timerIsControlled):
+      //                 scoped to the enclosing it/test callback and order-aware —
+      //                 a fake-timer install BEFORE the arm, or a flush/advance
+      //                 AFTER it, in the same callback. A flush before the arm
+      //                 (callback never ran) or a flush in a different test does
+      //                 not count, so it still runs after the test reports green.
       //   promise arm — assertion in a floating .then/.catch/.finally (the call
       //                 is a bare statement, not awaited/returned/chained), so it
       //                 may not run before the test ends.
@@ -590,7 +651,7 @@ export function analyze(sf: ts.SourceFile): Finding[] {
           const cb = node.arguments.find((a) => ts.isArrowFunction(a) || ts.isFunctionExpression(a));
           if (cb && containsAssertion(cb)) {
             const awaitedOrChained = !ts.isExpressionStatement(node.parent);
-            if (isTimer && !fakeTimers) {
+            if (isTimer && !timerIsControlled(node, sf)) {
               push(lineOf(sf, node), "JS7",
                 `assertion deferred into ${name}; runs after the test ends`);
             } else if (isThen && !awaitedOrChained) {
