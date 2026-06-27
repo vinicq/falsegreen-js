@@ -6,6 +6,13 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-06-27
+
+### Fixed
+- JS5 surfaces a floating promise observed only by a non-assignment binary op (||, &&, ===); only a real assignment with the call as RHS counts as observed.
+- JS7 timer control now consults lifecycle hooks that install/flush fake timers at both the enclosing-describe and source-file top level (#41).
+
+
 ### Added
 - C44 (numeric tautology, high, J2): `expect(x.length).toBeGreaterThanOrEqual(0)`. A
   `.length` is never negative and never NaN, so `>= 0` holds for every input and checks
