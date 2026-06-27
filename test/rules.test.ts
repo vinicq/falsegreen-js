@@ -373,6 +373,72 @@ describe("falsegreen-js rules", () => {
     expect(codes(`test("x", () => { doThing(); return; expect(a).toBe(b); });`)).toContain("C20");
   });
 
+  // --- C20 via structured reachability (cfg.ts) ----------------------------
+  it("C20: both arms of an if terminate, so the assertion after is dead", () => {
+    expect(codes(`test("x", () => { if (k) { return; } else { throw e; } expect(a).toBe(b); });`)).toContain("C20");
+  });
+
+  it("C20: assertion after process.exit is dead", () => {
+    expect(codes(`test("x", () => { process.exit(1); expect(a).toBe(b); });`)).toContain("C20");
+  });
+
+  it("C20: assertion after a terminating block is dead", () => {
+    expect(codes(`test("x", () => { { doThing(); return; } expect(a).toBe(b); });`)).toContain("C20");
+  });
+
+  it("C20: assertion after break in a loop body is dead", () => {
+    expect(codes(`test("x", () => { for (const x of xs) { break; expect(x).toBe(1); } });`)).toContain("C20");
+  });
+
+  it("C20: assertion after an exhaustive switch (every case + default escapes) is dead", () => {
+    expect(codes(`test("x", () => { switch (k) { case 1: return 1; default: throw e; } expect(a).toBe(b); });`)).toContain("C20");
+  });
+
+  it("does not flag C20 for an assertion after a loop (the loop may run zero times)", () => {
+    expect(codes(`test("x", () => { for (const x of xs) { doThing(x); } expect(a).toBe(b); });`)).not.toContain("C20");
+  });
+
+  it("does not flag C20 for an assertion after a conditional return without else", () => {
+    expect(codes(`test("x", () => { if (k) return; expect(a).toBe(b); });`)).not.toContain("C20");
+  });
+
+  it("does not flag C20 when the return is inside a nested callback (forEach), not the test", () => {
+    expect(codes(`test("x", () => { xs.forEach((x) => { return; }); expect(a).toBe(b); });`)).not.toContain("C20");
+  });
+
+  it("does not flag C20 for a switch without a default (a no-match falls through)", () => {
+    expect(codes(`test("x", () => { switch (k) { case 1: return 1; } expect(a).toBe(b); });`)).not.toContain("C20");
+  });
+
+  // --- C21 via structured reachability (cfg.ts) ----------------------------
+  it("C21: the only assertion lives in a catch block", () => {
+    expect(codes(`test("x", () => { try { doThing(); } catch (e) { expect(a).toBe(b); } });`)).toContain("C21");
+  });
+
+  it("C21: the only assertion lives in a loop body", () => {
+    expect(codes(`test("x", () => { for (const x of xs) { expect(x).toBe(1); } });`)).toContain("C21");
+  });
+
+  it("does not flag C21 for an assertion in an if(true) branch", () => {
+    expect(codes(`test("x", () => { if (true) { expect(a).toBe(b); } });`)).not.toContain("C21");
+  });
+
+  it("does not flag C21 for an assertion in a finally block (always runs)", () => {
+    expect(codes(`test("x", () => { try { doThing(); } finally { expect(a).toBe(b); } });`)).not.toContain("C21");
+  });
+
+  it("does not flag C21 for an assertion on the try spine", () => {
+    expect(codes(`test("x", () => { try { expect(a).toBe(b); } catch (e) {} });`)).not.toContain("C21");
+  });
+
+  it("does not flag C21 for an unconditional chai/Cypress fluent assertion (result.should.equal)", () => {
+    expect(codes(`test("x", () => { result.should.equal(1); });`)).not.toContain("C21");
+  });
+
+  it("C21: a guarded .should fluent assertion still fires", () => {
+    expect(codes(`test("x", () => { if (k) { result.should.equal(1); } });`)).toContain("C21");
+  });
+
   it("C23: hard-coded URL (mystery guest)", () => {
     expect(codes(`test("x", () => { const r = fetch("https://api.example.com/u"); expect(r).toBeDefined(); });`)).toContain("C23");
   });

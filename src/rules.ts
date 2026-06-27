@@ -6,6 +6,7 @@ import {
   VUE_SVELTE_ASYNC, oracleKind,
 } from "./oracles.js";
 import { lineOf } from "./parse.js";
+import { assertionsInDeadCode, hasUnconditionalAssertion } from "./cfg.js";
 
 // --- test framework vocabulary (runner-agnostic) ---------------------------
 // it/test/specify (Jest, Vitest, Mocha, Jasmine, AVA, node:test, Cypress,
@@ -111,31 +112,6 @@ function isStringify(e?: ts.Expression): boolean {
     return leaf === "String" || n === "JSON.stringify" || leaf === "toString" || leaf === "toJSON";
   }
   return false;
-}
-
-const CONDITIONAL_ANCESTORS = new Set<ts.SyntaxKind>([
-  ts.SyntaxKind.IfStatement, ts.SyntaxKind.ForStatement, ts.SyntaxKind.ForOfStatement,
-  ts.SyntaxKind.ForInStatement, ts.SyntaxKind.WhileStatement, ts.SyntaxKind.DoStatement,
-  ts.SyntaxKind.SwitchStatement, ts.SyntaxKind.CatchClause, ts.SyntaxKind.ConditionalExpression,
-]);
-
-/** True if the function has at least one assertion and every one of them sits under a
- *  conditional (if/for/while/switch/catch/?:) — so none runs unconditionally (C21). */
-function assertionsAllConditional(fn: ts.Node): boolean {
-  const asserts: ts.Node[] = [];
-  const walk = (n: ts.Node) => { if (isAssertionNode(n)) asserts.push(n); ts.forEachChild(n, walk); };
-  ts.forEachChild(fn, walk);
-  if (asserts.length === 0) return false;
-  for (const a of asserts) {
-    let p: ts.Node | undefined = a.parent;
-    let conditional = false;
-    while (p && p !== fn) {
-      if (CONDITIONAL_ANCESTORS.has(p.kind)) { conditional = true; break; }
-      p = p.parent;
-    }
-    if (!conditional) return false;
-  }
-  return true;
 }
 
 function containsCall(node: ts.Node): boolean {
@@ -536,13 +512,12 @@ export function analyze(sf: ts.SourceFile): Finding[] {
         if (cb && cb.body && ts.isBlock(cb.body)) {
           const stmts = cb.body.statements;
           const line = lineOf(sf, node);
-          // C20: an assertion after a return/throw in the test body is dead code
-          let terminated = false;
-          for (const st of stmts) {
-            if (terminated && containsAssertion(st)) {
-              push(lineOf(sf, st), "C20", "assertion after a return/throw never runs");
-            }
-            if (ts.isReturnStatement(st) || ts.isThrowStatement(st)) terminated = true;
+          // C20: an assertion at a position control can never reach (after a
+          // return/throw/process.exit/break, both-arms-terminating if, exhaustive
+          // switch). Structured reachability over the whole body, not just the top
+          // level; stops at nested functions (their returns are their own).
+          for (const a of assertionsInDeadCode(cb.body, isAssertionNode)) {
+            push(lineOf(sf, a), "C20", "assertion in unreachable code (after a return/throw/exit) never runs");
           }
           // C48: dark patch — the test flips a known test-mode flag (process.env or a
           // module/settings flag) into test mode and then asserts, exercising the
@@ -570,7 +545,14 @@ export function analyze(sf: ts.SourceFile): Finding[] {
             if (ms.length > 0 && ms.every((m) => SNAPSHOT_MATCHERS.has(m))) {
               push(line, "JS3", "the only assertion is a snapshot");
             }
-            if (assertionsAllConditional(cb)) {
+            // C21: the test has at least one assertion in its own scope and none of
+            // them is guaranteed to run unconditionally (all behind a condition, a
+            // loop, a switch, or a catch). Assertions that live only inside a nested
+            // callback are not counted here (unmodeled execution → suppress, FP-averse).
+            const ownAsserts: ts.Node[] = [];
+            forEachNoNesting(cb.body, (n) => { if (isAssertionNode(n)) ownAsserts.push(n); });
+            if (ownAsserts.length > 0 &&
+                !hasUnconditionalAssertion(cb.body, isAssertionNode, literalTruthiness)) {
               push(line, "C21", "every assertion is guarded by a condition");
             }
           }
