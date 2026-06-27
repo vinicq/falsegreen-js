@@ -323,13 +323,31 @@ function callMatchesUnder(scope: ts.Node, sf: ts.SourceFile, re: RegExp): boolea
   return found;
 }
 
-/** A timer can be driven from a sibling lifecycle hook rather than the test body:
- *  a fake-timer install in a beforeEach/beforeAll always runs before the test, and
- *  a flush/advance in an afterEach/afterAll always runs after it. Walk every
- *  enclosing describe/suite and look for the right call in the right hook kind.
- *  Order inside the hook does not matter — the hook itself is sequenced around the
- *  test body by the runner. */
+/** Scan one statement list for a lifecycle hook that drives the timer: a
+ *  fake-timer install in a beforeEach/beforeAll runs before every test in scope,
+ *  a flush/advance in an afterEach/afterAll runs after. Order inside the hook does
+ *  not matter — the runner sequences the hook around the test body. */
+function hookStatementsControlTimer(
+  statements: readonly ts.Statement[],
+  sf: ts.SourceFile,
+): boolean {
+  for (const stmt of statements) {
+    if (!ts.isExpressionStatement(stmt) || !ts.isCallExpression(stmt.expression)) continue;
+    const hook = calleeName(stmt.expression.expression).split(".")[0];
+    const cb = getTestCallback(stmt.expression);
+    if (!cb) continue;
+    if (SETUP_HOOKS.has(hook) && callMatchesUnder(cb, sf, FAKE_TIMER_INSTALL)) return true;
+    if (TEARDOWN_HOOKS.has(hook) && callMatchesUnder(cb, sf, FAKE_TIMER_FLUSH)) return true;
+  }
+  return false;
+}
+
+/** A timer can be driven from a sibling lifecycle hook rather than the test body.
+ *  Top-level hooks (outside any describe) wrap every test in the file, and hooks
+ *  in any enclosing describe/suite wrap every test nested under it. Check both. */
 function hookControlsTimer(timer: ts.CallExpression, sf: ts.SourceFile): boolean {
+  // Top-level hooks live directly in the source file and apply to every test.
+  if (hookStatementsControlTimer(sf.statements, sf)) return true;
   let p: ts.Node | undefined = timer.parent;
   while (p) {
     // The body of an enclosing describe/suite callback: scan its top-level hook calls.
@@ -340,14 +358,7 @@ function hookControlsTimer(timer: ts.CallExpression, sf: ts.SourceFile): boolean
     ) {
       const suiteRoot = calleeName(p.parent.expression).split(".")[0];
       if (SUITE_ROOTS.has(suiteRoot) && p.body && ts.isBlock(p.body)) {
-        for (const stmt of p.body.statements) {
-          if (!ts.isExpressionStatement(stmt) || !ts.isCallExpression(stmt.expression)) continue;
-          const hook = calleeName(stmt.expression.expression).split(".")[0];
-          const cb = getTestCallback(stmt.expression);
-          if (!cb) continue;
-          if (SETUP_HOOKS.has(hook) && callMatchesUnder(cb, sf, FAKE_TIMER_INSTALL)) return true;
-          if (TEARDOWN_HOOKS.has(hook) && callMatchesUnder(cb, sf, FAKE_TIMER_FLUSH)) return true;
-        }
+        if (hookStatementsControlTimer(p.body.statements, sf)) return true;
       }
     }
     p = p.parent;

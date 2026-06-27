@@ -213,6 +213,27 @@ describe("falsegreen-js rules", () => {
     expect(codes(src)).not.toContain("JS7");
   });
 
+  it("JS7 timer arm: top-level beforeEach install (outside any describe) controls it", () => {
+    // Top-level hooks wrap every test in the file, so an install there drives the timer.
+    const src = `beforeEach(() => { jest.useFakeTimers(); });
+      afterEach(() => { jest.runAllTimers(); });
+      it("x", () => { setTimeout(() => { expect(a).toBe(1); }, 0); });`;
+    expect(codes(src)).not.toContain("JS7");
+  });
+
+  it("JS7 timer arm: top-level afterEach flush (outside any describe) controls it", () => {
+    const src = `afterEach(() => { jest.runOnlyPendingTimers(); });
+      test("x", () => { setTimeout(() => { expect(a).toBe(1); }, 0); });`;
+    expect(codes(src)).not.toContain("JS7");
+  });
+
+  it("JS7 timer arm: top-level beforeEach without timer call still flags", () => {
+    // a top-level hook that does not touch fake timers must not suppress JS7.
+    const src = `beforeEach(() => { setup(); });
+      it("x", () => { setTimeout(() => { expect(a).toBe(1); }, 0); });`;
+    expect(codes(src)).toContain("JS7");
+  });
+
   it("JS7 timer arm: no hook control and no in-test flush still flags", () => {
     const src = `describe("s", () => {
       beforeEach(() => { setup(); });
