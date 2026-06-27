@@ -87,6 +87,31 @@ describe("falsegreen-js rules", () => {
     expect(codes(src)).toContain("JS5");
   });
 
+  it("JS5: floating expect(p).resolves.toBe without await", () => {
+    expect(codes(`test("x", () => { expect(fetchUser()).resolves.toBe(1); });`)).toContain("JS5");
+  });
+
+  it("JS5: floating expect(p).rejects.toThrow without await", () => {
+    expect(codes(`test("x", () => { expect(boom()).rejects.toThrow(); });`)).toContain("JS5");
+  });
+
+  it("does not flag JS5 for an awaited expect(p).resolves", () => {
+    expect(codes(`test("x", async () => { await expect(fetchUser()).resolves.toBe(1); });`)).not.toContain("JS5");
+  });
+
+  it("does not flag JS5 for a returned expect(p).rejects", () => {
+    expect(codes(`test("x", () => { return expect(boom()).rejects.toThrow(); });`)).not.toContain("JS5");
+  });
+
+  it("does not flag JS5 for a synchronous expect (no resolves/rejects)", () => {
+    expect(codes(`test("x", () => { expect(value()).toBe(1); });`)).not.toContain("JS5");
+  });
+
+  it("emits exactly one JS5 for a floating expect(p).resolves (no double-report)", () => {
+    const fired = codes(`test("x", () => { expect(fetchUser()).resolves.toBe(1); });`);
+    expect(fired.filter((c) => c === "JS5")).toHaveLength(1);
+  });
+
   it("JS5: findBy compared with === still floats the promise", () => {
     const src = `test("x", async () => { screen.findByText("Saved") === ready; expect(true).toBe(false); });`;
     expect(codes(src)).toContain("JS5");
