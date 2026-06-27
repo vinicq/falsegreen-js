@@ -14,6 +14,17 @@ All notable changes to this project are documented here. The format is based on
   feature flags are not flagged; a flag write with no assertion after it is setup, not a dark
   patch. Parity with falsegreen (Python) `C48`, same id and J1/low (#39).
 
+### Changed
+- `C20` and `C21` now use a structured intra-test reachability walk (`src/cfg.ts`) instead of
+  a top-level-only scan. `C20` (dead code) catches an assertion after any non-falling-through
+  statement: a `return`/`throw`, `process.exit()`, a `break`/`continue`, an `if` whose both
+  arms terminate, a terminating block, or an exhaustive `switch` (every case plus a `default`
+  escapes). `C21` (no unconditional assertion) fires only when no assertion is on the guaranteed
+  spine; an assertion in an `if(true)` branch, a `finally`, or a `try` block now counts as
+  guaranteed, and an assertion only in a `catch` or a loop body is correctly flagged. The walk
+  stops at nested functions, so a `return` inside a `forEach`/IIFE callback no longer reads as
+  dead code. False-positive-averse: anything unmodeled is treated as reachable/guaranteed (#35).
+
 ## [0.4.0] - 2026-06-27
 
 ### Fixed
