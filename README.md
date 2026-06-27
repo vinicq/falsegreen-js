@@ -158,7 +158,7 @@ Each code carries a judgment tag (J1-J6) shared with the
 
 ### Opt-in: maintainability group (default off)
 
-These are **not** false-green — the test still protects something — so they are off by
+These are **not** false-green - the test still protects something - so they are off by
 default. Enable them with `--diagnostics`, or per code via config `severity`. They are a
 "plus" for test-code health, mirroring falsegreen's diagnostic/coupling groups.
 
@@ -243,7 +243,7 @@ Measured against the [Open Catalog of Test Smells](https://test-smell-catalog.re
 The catalog is grounded in the test-smell literature. Direct influences: the
 rotten-green-test work that names this whole family (Delplanque et al., ICSE 2019),
 the founding test-smell refactoring catalog (van Deursen et al., XP 2001), the
-JS/TS empirical studies (Jorge, UFCG 2023; Silva, PUC Minas 2022 — the academic
+JS/TS empirical studies (Jorge, UFCG 2023; Silva, PUC Minas 2022 - the academic
 precedent for the focused-test and snapshot codes; Oliveira et al., SBES 2024/2025),
 and the detection-tool baselines (tsDetect, Peruma et al., 2020). Full list and the
 code-to-source mapping in [CREDITS.md](CREDITS.md).
