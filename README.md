@@ -250,8 +250,9 @@ code-to-source mapping in [CREDITS.md](CREDITS.md).
 
 ## Status
 
-`0.1.0`, early. The rule set is a deterministic core; the full JS/TS smell catalog is
-tracked as research in the private audit hub. Issues and PRs welcome.
+The rule set is a deterministic core; the full JS/TS smell catalog is tracked as
+research in the private audit hub. See [STATUS.md](STATUS.md) for the current version
+and rule coverage. Issues and PRs welcome.
 
 ## License
 

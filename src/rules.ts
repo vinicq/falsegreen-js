@@ -505,8 +505,7 @@ export function analyze(sf: ts.SourceFile): Finding[] {
       // (and the focus/skip variants) — never `describe`/`suite`, whose body holds
       // nested tests, not assertions.
       const isTestBlock =
-        TEST_BLOCK_ROOTS.has(root) || root === "fit" || root === "xit" ||
-        ((TEST_BLOCK_ROOTS.has(root)) && (modifier === "only" || modifier === "skip" || modifier === "each"));
+        TEST_BLOCK_ROOTS.has(root) || root === "fit" || root === "xit";
       if (isTestBlock) {
         const cb = getTestCallback(node);
         // JS18: the test takes a `done` callback instead of async/await. A done
@@ -525,9 +524,11 @@ export function analyze(sf: ts.SourceFile): Finding[] {
           // return/throw/process.exit/break, both-arms-terminating if, exhaustive
           // switch). Structured reachability over the whole body, not just the top
           // level; stops at nested functions (their returns are their own).
-          for (const a of assertionsInDeadCode(cb.body, isAssertionNode)) {
+          const deadAsserts = assertionsInDeadCode(cb.body, isAssertionNode);
+          for (const a of deadAsserts) {
             push(lineOf(sf, a), "C20", "assertion in unreachable code (after a return/throw/exit) never runs");
           }
+          const deadAssertSet = new Set<ts.Node>(deadAsserts);
           // C48: dark patch — the test flips a known test-mode flag (process.env or a
           // module/settings flag) into test mode and then asserts, exercising the
           // product's test-only branch instead of real behaviour. v1: raw writes only.
@@ -558,10 +559,14 @@ export function analyze(sf: ts.SourceFile): Finding[] {
             // them is guaranteed to run unconditionally (all behind a condition, a
             // loop, a switch, or a catch). Assertions that live only inside a nested
             // callback are not counted here (unmodeled execution → suppress, FP-averse).
+            // Assertions already flagged C20 (dead code) are excluded: C20 owns them, so
+            // a dead-code-only test reports C20 alone, not a contradictory C20 + C21 (#62).
             const ownAsserts: ts.Node[] = [];
-            forEachNoNesting(cb.body, (n) => { if (isAssertionNode(n)) ownAsserts.push(n); });
+            forEachNoNesting(cb.body, (n) => {
+              if (isAssertionNode(n) && !deadAssertSet.has(n)) ownAsserts.push(n);
+            });
             if (ownAsserts.length > 0 &&
-                !hasUnconditionalAssertion(cb.body, isAssertionNode, literalTruthiness)) {
+                !hasUnconditionalAssertion(cb.body, isAssertionNode, literalTruthiness, deadAssertSet)) {
               push(line, "C21", "every assertion is guarded by a condition");
             }
           }
@@ -602,7 +607,7 @@ export function analyze(sf: ts.SourceFile): Finding[] {
       }
 
       // JS6: empty describe/suite block
-      if (SUITE_ROOTS.has(root) || (SUITE_ROOTS.has(root) && (modifier === "only" || modifier === "skip"))) {
+      if (SUITE_ROOTS.has(root)) {
         const cb = getTestCallback(node);
         if (cb && cb.body && ts.isBlock(cb.body) && cb.body.statements.length === 0) {
           push(lineOf(sf, node), "JS6", "suite body is empty");

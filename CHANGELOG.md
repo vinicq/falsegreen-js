@@ -12,6 +12,9 @@ All notable changes to this project are documented here. The format is based on
 - C16 crypto match is anchored to a crypto root (`crypto.randomUUID`, `globalThis/window/self.crypto`,
   or the bare node:crypto import), so a user method named `randomUUID()`/`getRandomValues()` is no
   longer flagged (#61).
+- C20 and C21 no longer double-report on a dead-code-only assertion: an assertion already flagged
+  C20 (unreachable) is excluded from the C21 set, so C20 owns the line. C21 still fires when a live
+  conditional assertion remains (#62).
 
 ### Added
 - `C16` nondeterminism now also flags `new Date()` (zero-arg, reads the system clock),
@@ -19,20 +22,21 @@ All notable changes to this project are documented here. The format is based on
   instant and stays clean, and the file-wide fake-timer suppression applies. Aliased/destructured
   clock reads (`const now = Date.now; now()`) stay out: tracking them would trade a rare miss for
   a frequent false positive on user `now()` helpers (#46).
-
-### Tests
-- Lock the floating `expect(p).resolves`/`.rejects.<matcher>()` case for `JS5`: a non-awaited
-  promise matcher is already flagged through the oracle registry (the matcher builds a promise
-  that never settles before the test ends), and tests now pin that, including an exact-count
-  guard so a future change cannot double-report it. Awaited/returned forms stay clean (#43).
-
-### Added
 - `C48` (dark patch): a test that flips a known test-mode flag into test mode and then
   asserts is exercising the product's test-only branch, not real behaviour. Detection-only;
   v1 covers raw writes (`process.env.NODE_ENV = "test"`, `process.env.TESTING = "1"`,
   `settings.TESTING = true`). `NODE_ENV` only counts as `"test"`; config values and product
   feature flags are not flagged; a flag write with no assertion after it is setup, not a dark
   patch. Parity with falsegreen (Python) `C48`, same id and J1/low (#39).
+
+### Tests
+- Lock the floating `expect(p).resolves`/`.rejects.<matcher>()` case for `JS5`: a non-awaited
+  promise matcher is already flagged through the oracle registry (the matcher builds a promise
+  that never settles before the test ends), and tests now pin that, including an exact-count
+  guard so a future change cannot double-report it. Awaited/returned forms stay clean (#43).
+- Characterization tests for the cfg reachability edge cases: for-in (C20 after / C21 inside),
+  labeled `break outer`, a switch case that falls through without escaping, an IIFE holding the
+  only assertion (no phantom C21), and `performance.now()` C16 (#63).
 
 ### Changed
 - `C20` and `C21` now use a structured intra-test reachability walk (`src/cfg.ts`) instead of
@@ -44,6 +48,9 @@ All notable changes to this project are documented here. The format is based on
   guaranteed, and an assertion only in a `catch` or a loop body is correctly flagged. The walk
   stops at nested functions, so a `return` inside a `forEach`/IIFE callback no longer reads as
   dead code. False-positive-averse: anything unmodeled is treated as reachable/guaranteed (#35).
+- README Status no longer pins a stale `0.1.0` literal; it points to STATUS.md for the current
+  version and coverage. Removed two boolean sub-clauses fully subsumed by their first disjunct
+  in `isTestBlock` and the JS6 suite guard (behavior-preserving) (#64, #65).
 
 ## [0.4.0] - 2026-06-27
 
