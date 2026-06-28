@@ -1,0 +1,12 @@
+# Enables the opt-in diagnostic group so
+# `node dist/cli.js examples --config examples/enable-optin.toml` also flags the
+# D*/M2 maintainability samples. These are off by default because they warn
+# about test health, not a test that lies about being green.
+[severity]
+D1 = "low"   # assertion roulette
+D3 = "low"   # duplicate assert
+D4 = "low"   # untitled it.each cases
+D6 = "low"   # console.* in a test body
+D7 = "low"   # anonymous test
+D8 = "low"   # magic number in an assertion
+M2 = "low"   # long test body

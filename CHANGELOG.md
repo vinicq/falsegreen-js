@@ -21,6 +21,15 @@ All notable changes to this project are documented here. The format is based on
 - CLI `--enable <codes>` (and `--enable=...`): re-activates listed off or opt-in codes at their
   catalog severity, flipping a default-off code on. It cannot raise a code above catalog
   severity. `--disable` wins over `--enable`, so a code passed to both stays off.
+- `examples/` tree (#47): a worked sample for every emitted code, a BAD test the scanner flags
+  paired with a CLEAN look-alike one token away that it leaves alone. Files are grouped by
+  RiskGroup (`effectiveness`, `execution`, `nondeterminism`, `dependency`), with `cypress.cy.ts`
+  for the Cypress code and `diagnostics.test.ts` for the opt-in maintainability group. C16 keeps
+  a separate frozen-clock file because the fake-timer signal is file-wide. `vitest.config.ts`
+  excludes `examples/**` from collection, and `test/examples.test.ts` scans each file with
+  `analyze(parse(...))` to assert every code fires in its file, with a drift guard that fails if a
+  new default-on code lands without an example. The config-audit-only PL series scans Jest/Vitest
+  config rather than a test file, so it has no test-file example.
 
 ### Changed
 - `JS8` now also catches the `jest.spyOn`/`vi.spyOn` form: a spy with a canned return
