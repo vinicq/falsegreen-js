@@ -42,6 +42,13 @@ All notable changes to this project are documented here. The format is based on
   passes by writing itself on the first run. A populated inline snapshot keeps the existing
   detail; the snapshot-only detection logic is unchanged.
 
+### Docs
+- `CONTRIBUTING.md` documents the FP-boundary decisions that previously lived only in
+  source comments: the admission criteria for a new code (statically provable, FP-guarded,
+  ships with a CLEAN look-alike one token from the BAD, carries a catalog entry, clears the
+  panel and principal-reviewer gate) and the standing per-code rules for C44, C6, JS5, C16,
+  JS23, JS24, and JS8 (#51).
+
 ## [0.4.0] - 2026-06-28
 
 ### Fixed
