@@ -6,6 +6,13 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+### Added
+- `C16` nondeterminism now also flags `new Date()` (zero-arg, reads the system clock),
+  `crypto.randomUUID()`, and `crypto.getRandomValues()`. `new Date(<literal/expr>)` is a fixed
+  instant and stays clean, and the file-wide fake-timer suppression applies. Aliased/destructured
+  clock reads (`const now = Date.now; now()`) stay out: tracking them would trade a rare miss for
+  a frequent false positive on user `now()` helpers (#46).
+
 ### Tests
 - Lock the floating `expect(p).resolves`/`.rejects.<matcher>()` case for `JS5`: a non-awaited
   promise matcher is already flagged through the oracle registry (the matcher builds a promise

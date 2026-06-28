@@ -426,8 +426,12 @@ function timerIsControlled(timer: ts.CallExpression, sf: ts.SourceFile): boolean
 // --- C16: nondeterminism ----------------------------------------------------
 function c16Detail(call: ts.CallExpression): string | null {
   const name = calleeName(call.expression);
+  const leaf = name.split(".").pop() ?? "";
   if (name === "Math.random") return "Math.random() without a fixed seed";
   if (name === "Date.now" || name === "performance.now") return "reads the system clock";
+  // crypto.randomUUID() / crypto.getRandomValues() (or the bare node:crypto imports)
+  // produce a fresh random value each run with no seed.
+  if (leaf === "randomUUID" || leaf === "getRandomValues") return "crypto randomness without a seed";
   if (name === "setTimeout" || name === "setInterval") {
     if (call.arguments.length >= 2 && ts.isNumericLiteral(call.arguments[1])) {
       return "fixed timer delay";
@@ -857,6 +861,19 @@ export function analyze(sf: ts.SourceFile): Finding[] {
       expectRooted(node.expression)
     ) {
       push(lineOf(sf, node), "JS21", `${node.name.text} is referenced but never called`);
+    }
+
+    // C16: `new Date()` with no argument reads the system clock (nondeterministic).
+    // `new Date(literal)` / `new Date(expr)` constructs a fixed instant, so it stays
+    // clean; the file-wide fake-timer suppression applies here too.
+    if (
+      !fakeTimers &&
+      ts.isNewExpression(node) &&
+      ts.isIdentifier(node.expression) &&
+      node.expression.text === "Date" &&
+      (node.arguments === undefined || node.arguments.length === 0)
+    ) {
+      push(lineOf(sf, node), "C16", "new Date() reads the system clock");
     }
 
     ts.forEachChild(node, visit);
