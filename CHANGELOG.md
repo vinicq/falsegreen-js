@@ -6,6 +6,13 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+### Fixed
+- C21 no longer false-positives on a `do { expect } while(c)`: a do/while body always runs at least
+  once, so its assertion is unconditional (#60).
+- C16 crypto match is anchored to a crypto root (`crypto.randomUUID`, `globalThis/window/self.crypto`,
+  or the bare node:crypto import), so a user method named `randomUUID()`/`getRandomValues()` is no
+  longer flagged (#61).
+
 ### Added
 - `C16` nondeterminism now also flags `new Date()` (zero-arg, reads the system clock),
   `crypto.randomUUID()`, and `crypto.getRandomValues()`. `new Date(<literal/expr>)` is a fixed

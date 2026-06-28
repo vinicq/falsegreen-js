@@ -196,7 +196,10 @@ export function hasUnconditionalAssertion(
       if (st.finallyBlock && listGuaranteed(st.finallyBlock.statements)) return true;
       return false;
     }
-    // loops, switch, while: their body is not guaranteed to run.
+    // do/while is the one loop whose body always runs at least once, so an
+    // assertion in it IS unconditional (the condition only controls repetition).
+    if (ts.isDoStatement(st)) return stmtGuaranteed(st.statement);
+    // for/while/for-of/for-in/switch/catch: their body is not guaranteed to run.
     return false;
   };
 

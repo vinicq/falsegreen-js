@@ -429,9 +429,14 @@ function c16Detail(call: ts.CallExpression): string | null {
   const leaf = name.split(".").pop() ?? "";
   if (name === "Math.random") return "Math.random() without a fixed seed";
   if (name === "Date.now" || name === "performance.now") return "reads the system clock";
-  // crypto.randomUUID() / crypto.getRandomValues() (or the bare node:crypto imports)
-  // produce a fresh random value each run with no seed.
-  if (leaf === "randomUUID" || leaf === "getRandomValues") return "crypto randomness without a seed";
+  // crypto.randomUUID() / crypto.getRandomValues() (incl. globalThis/window/self.crypto and
+  // the bare node:crypto import) produce a fresh random value each run with no seed. Anchored
+  // to a crypto root so a user method named randomUUID()/getRandomValues() is NOT flagged.
+  const isCryptoRandom = (m: string): boolean =>
+    name === "crypto." + m || name.endsWith(".crypto." + m) || name === m;
+  if (isCryptoRandom("randomUUID") || isCryptoRandom("getRandomValues")) {
+    return "crypto randomness without a seed";
+  }
   if (name === "setTimeout" || name === "setInterval") {
     if (call.arguments.length >= 2 && ts.isNumericLiteral(call.arguments[1])) {
       return "fixed timer delay";
