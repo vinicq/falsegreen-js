@@ -6,6 +6,33 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+### Added
+- `JS23` (high, J1): `expect.assertions(N)` with a numeric `N` higher than the unconditional,
+  reachable, non-nested `expect()` calls that can run. The guard can never be met, so the test
+  passes without ever exercising the count it claims. Fires only when `N` is a numeric literal
+  and the shortfall is provable: an `expect` in a loop, a branch, a `.then`/callback, or a
+  helper makes the count indeterminate and suppresses the finding. `expect.hasAssertions()`
+  carries no count and is skipped. This is the implemented sibling of the still-skipped JS16.
+- `JS24` (low, J4): a Cypress query chain (`cy.get`/`cy.find`/`cy.contains`) used as a statement
+  with no terminating `.should`/`.and` and no `expect` inside a `.then` callback. The query
+  produces a subject that is never asserted, the cy.* analogue of JS13. Action commands
+  (`click`/`type`/`visit`/...) do work rather than just query, so a chain ending in one stays
+  clean, as does a chain that ends in `.should`/`.and` or asserts in `.then`.
+- CLI `--enable <codes>` (and `--enable=...`): re-activates listed off or opt-in codes at their
+  catalog severity, flipping a default-off code on. It cannot raise a code above catalog
+  severity. `--disable` wins over `--enable`, so a code passed to both stays off.
+
+### Changed
+- `JS8` now also catches the `jest.spyOn`/`vi.spyOn` form: a spy with a canned return
+  (`mockReturnValue`/`mockResolvedValue`/`mockImplementation`) whose spied target root is also an
+  `expect` subject. The test asserts the canned value, not real behaviour. Conservative
+  same-binding guard: spying a collaborator (a different object) stays clean, and asserting on
+  the spy handle itself (`expect(spy).toHaveBeenCalled()`) is not treated as the subject.
+- `JS3` gains a distinct detail when the snapshot is an empty inline baseline:
+  `toMatchInlineSnapshot()` with no argument, or an empty or whitespace-only string baseline,
+  passes by writing itself on the first run. A populated inline snapshot keeps the existing
+  detail; the snapshot-only detection logic is unchanged.
+
 ## [0.4.0] - 2026-06-28
 
 ### Fixed

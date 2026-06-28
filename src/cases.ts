@@ -95,6 +95,8 @@ export const CASES: Record<string, CaseDef> = {
   JS18: { title: "test takes a done callback instead of async/await — a done called too early (or in a floating promise) passes before the assertions run", group: "execution", severity: "low", defaultOn: true, judgment: "J1" },
   JS21: { title: "matcher referenced but never called (expect(x).toBe with no ()) — the assertion never executes", group: "execution", severity: "high", defaultOn: true, judgment: "J1" },
   JS22: { title: "empty it.each/test.each table — the test is generated with zero cases and never runs", group: "execution", severity: "high", defaultOn: true, judgment: "J1" },
+  JS23: { title: "expect.assertions(N) with fewer unconditional expect() calls than N — the guard can never be met", group: "execution", severity: "high", defaultOn: true, judgment: "J1" },
+  JS24: { title: "Cypress query (cy.get/find/contains) with no terminating .should/.and and no expect in .then — its result is never asserted", group: "effectiveness", severity: "low", defaultOn: true, judgment: "J4" },
 
   // --- diagnostic group (maintainability; default off, opt-in via --diagnostics
   // or config severity). These are NOT false-green: the test still protects. They
@@ -197,6 +199,8 @@ export const FIX_HINTS: Record<string, string> = {
   JS18: "use async/await instead of the done callback",
   JS21: "call the matcher (add ()) so the assertion executes",
   JS22: "add at least one row to the it.each/test.each table",
+  JS23: "make the unconditional expect() count match expect.assertions(N), or remove the guard",
+  JS24: "end the cy query in .should()/.and(), or assert in .then()",
   D1: "give each assertion a message, or split the test",
   D3: "remove the duplicate assertion",
   D4: "add titled cases to it.each/test.each",

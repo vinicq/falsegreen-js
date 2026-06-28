@@ -15,7 +15,14 @@ AST scan, no code execution. Sibling of [`falsegreen`](https://github.com/vinicq
 
 Covers `.js`, `.jsx`, `.ts`, `.tsx`, `.mjs`, `.cjs`, `.mts`, `.cts`.
 
-**The falsegreen family:** [falsegreen](https://github.com/vinicq/falsegreen) (Python/pytest) · **falsegreen-js** (JS/TS) · [robotframework-falsegreen](https://github.com/vinicq/robotframework-falsegreen) (Robot Framework) · [falsegreen-skill](https://github.com/vinicq/falsegreen-skill) (semantic LLM pass).
+**The falsegreen family** (install the one for your stack):
+
+| Tool | Stack | Install | Package |
+|---|---|---|---|
+| [falsegreen](https://github.com/vinicq/falsegreen) | Python / pytest | `pip install falsegreen` | [PyPI](https://pypi.org/project/falsegreen/) |
+| **falsegreen-js** | JS / TS | `npm i -D falsegreen-js` (`npx falsegreen-js`) | [npm](https://www.npmjs.com/package/falsegreen-js) |
+| [robotframework-falsegreen](https://github.com/vinicq/robotframework-falsegreen) | Robot Framework | `pip install robotframework-falsegreen` | [PyPI](https://pypi.org/project/robotframework-falsegreen/) |
+| [falsegreen-skill](https://github.com/vinicq/falsegreen-skill) | semantic LLM pass | `npx falsegreen-skill analyze <path>` | [npm](https://www.npmjs.com/package/falsegreen-skill) |
 
 ## Why
 
@@ -44,6 +51,7 @@ npx falsegreen-js --output report.json   # write to a file
 npx falsegreen-js --output .falsegreen/  # write report.<ext> into a directory
 npx falsegreen-js --config-audit  # audit Jest/Vitest config (project-layer PL codes)
 npx falsegreen-js --disable C7,JS3
+npx falsegreen-js --enable D8,M2   # re-activate off/opt-in codes at catalog severity
 ```
 
 Each finding is reported with its pyramid level (unit / integration / e2e, read from the file's imports) and a one-line fix hint, and the summary breaks the findings down by level and lists the most common fixes. `--output` takes a file or a directory: an extension-less or trailing-slash path (e.g. `.falsegreen/`) receives `report.<ext>` for the chosen format. Reports are run artifacts; keep the output directory gitignored.
@@ -152,6 +160,8 @@ line up in the research. `JS*` codes are ecosystem-specific.
 | JS18 | low | test takes a `done` callback instead of async/await — a mistimed `done` passes early |
 | JS21 | high | matcher referenced but never called (`expect(x).toBe` with no `()`) — the assertion never runs |
 | JS22 | high | empty `it.each`/`test.each` table — generated with zero cases, never runs |
+| JS23 | high | `expect.assertions(N)` with fewer unconditional `expect()` calls than N — the guard can never be met |
+| JS24 | low  | Cypress query (`cy.get`/`cy.find`/`cy.contains`) as a loose statement with no terminating `.should`/`.and` and no `expect` in `.then` — its result is never asserted |
 
 Each code carries a judgment tag (J1-J6) shared with the
 [falsegreen-skill](https://github.com/vinicq/falsegreen-skill) semantic framework.
@@ -186,8 +196,11 @@ Some catalog codes were reviewed and left out, on purpose:
 - **JS20** (a Promise compared without `resolves`/`rejects`): telling that a value is a
   Promise needs type information the AST does not carry, so it would be too noisy.
 - **JS12** (a floating promise whose `expect` is never returned): already covered by JS7.
-- **JS16** (`async` test with no `expect.assertions(n)`): the absence of a guard is not a
-  smell on its own; flagging it would fire on most async tests.
+- **JS16** (`async` test with no `expect.assertions(n)`): the *absence* of a guard is not a
+  smell on its own; flagging it would fire on most async tests. The implemented sibling is
+  `JS23`, which fires on a present-but-unsatisfiable guard: `expect.assertions(N)` with a
+  numeric `N` higher than the unconditional `expect()` calls that can run, so the count can
+  never be met.
 - **JS14** (a giant inline snapshot): a readability and review-noise concern, not a
   false-green one. The snapshot still protects, so it belongs to the diagnostic group and is
   better served by `eslint-plugin-jest` (`no-large-snapshots`) as an opt-in lint rule.
@@ -226,7 +239,7 @@ Optional. `falsegreen.json`, `.falsegreenrc.json`, or a `"falsegreen"` key in
 }
 ```
 
-Precedence: CLI `--disable` > config `disable`/`severity` > catalog default.
+Precedence: CLI `--disable` > CLI `--enable` > config `disable`/`severity` > catalog default. `--enable <codes>` re-activates listed off or opt-in codes at their catalog severity (it flips a default-off code on; it cannot raise a code above catalog). A code passed to both `--enable` and `--disable` stays off — `--disable` wins.
 
 ## Scope and honesty
 
