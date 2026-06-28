@@ -61,6 +61,14 @@ describe("falsegreen-js rules", () => {
     expect(codes(`beforeEach(() => { vi.useFakeTimers(); });\ntest("x", () => { const t = new Date(); expect(t).toBeDefined(); });`)).not.toContain("C16");
   });
 
+  it("does not flag C16 for a user method named randomUUID (not crypto-rooted)", () => {
+    expect(codes(`test("x", () => { const id = uuidGen.randomUUID(); expect(id).toBe("abc"); });`)).not.toContain("C16");
+  });
+
+  it("C16: bare randomUUID() (node:crypto import) without a seed", () => {
+    expect(codes(`import { randomUUID } from "node:crypto";\ntest("x", () => { const id = randomUUID(); expect(id).toHaveLength(36); });`)).toContain("C16");
+  });
+
   it("JS1: focused test it.only", () => {
     expect(codes(`it.only("x", () => { expect(1).toBe(1); });`)).toContain("JS1");
   });
@@ -475,6 +483,14 @@ describe("falsegreen-js rules", () => {
 
   it("does not flag C21 for an assertion in a finally block (always runs)", () => {
     expect(codes(`test("x", () => { try { doThing(); } finally { expect(a).toBe(b); } });`)).not.toContain("C21");
+  });
+
+  it("does not flag C21 for an assertion in a do/while body (runs at least once)", () => {
+    expect(codes(`test("x", () => { do { expect(a).toBe(b); } while (c); });`)).not.toContain("C21");
+  });
+
+  it("C21: a do/while with only a conditional assertion still fires", () => {
+    expect(codes(`test("x", () => { do { noop(); } while (c); if (k) { expect(a).toBe(b); } });`)).toContain("C21");
   });
 
   it("does not flag C21 for an assertion on the try spine", () => {
