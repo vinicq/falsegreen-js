@@ -6,6 +6,8 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-06-28
+
 ### Fixed
 - C21 no longer false-positives on a `do { expect } while(c)`: a do/while body always runs at least
   once, so its assertion is unconditional (#60).
@@ -52,9 +54,7 @@ All notable changes to this project are documented here. The format is based on
   version and coverage. Removed two boolean sub-clauses fully subsumed by their first disjunct
   in `isTestBlock` and the JS6 suite guard (behavior-preserving) (#64, #65).
 
-## [0.4.0] - 2026-06-27
-
-### Fixed
+### Fixed (earlier in the 0.4.0 cycle)
 - JS5 surfaces a floating promise observed only by a non-assignment binary op (||, &&, ===); only a real assignment with the call as RHS counts as observed.
 - JS7 timer control now consults lifecycle hooks that install/flush fake timers at both the enclosing-describe and source-file top level (#41).
 
@@ -176,7 +176,8 @@ All notable changes to this project are documented here. The format is based on
 - pre-commit hook (`.pre-commit-hooks.yaml`), CI matrix (Node 18/20/22), and an npm
   trusted-publishing release workflow.
 
-[Unreleased]: https://github.com/vinicq/falsegreen-js/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/vinicq/falsegreen-js/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/vinicq/falsegreen-js/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/vinicq/falsegreen-js/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/vinicq/falsegreen-js/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/vinicq/falsegreen-js/releases/tag/v0.1.0
