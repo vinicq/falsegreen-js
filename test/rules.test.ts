@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { parse } from "../src/parse.js";
 import { analyze } from "../src/rules.js";
-import { isTestFile } from "../src/scan.js";
+import { isTestFile, effectiveConf } from "../src/scan.js";
 
 function codes(src: string, file = "x.test.ts"): string[] {
   return analyze(parse(file, src)).map((f) => f.code);
@@ -687,6 +687,92 @@ describe("falsegreen-js rules", () => {
   it("does not flag JS22 for a plain helper .each over an empty array", () => {
     const src = `test("x", () => { _.each([], fn); expect(run()).toBe(1); });`;
     expect(codes(src)).not.toContain("JS22");
+  });
+
+  // --- JS23: expect.assertions(N) with too few unconditional expect calls ----
+  it("JS23: expect.assertions(2) but only one unconditional expect runs", () => {
+    const src = `test("x", async () => { expect.assertions(2); expect(a).toBe(b); });`;
+    expect(codes(src)).toContain("JS23");
+  });
+
+  it("does not flag JS23 when the count matches the unconditional expect calls", () => {
+    const src = `test("x", async () => { expect.assertions(2); expect(a).toBe(1); expect(b).toBe(2); });`;
+    expect(codes(src)).not.toContain("JS23");
+  });
+
+  it("does not flag JS23 when the missing expect calls sit in a loop (count indeterminate)", () => {
+    const src = `test("x", async () => { expect.assertions(2); expect(a).toBe(1); for (const x of xs) { expect(x).toBe(1); } });`;
+    expect(codes(src)).not.toContain("JS23");
+  });
+
+  it("does not flag JS23 for expect.hasAssertions() (no count)", () => {
+    const src = `test("x", async () => { expect.hasAssertions(); expect(a).toBe(1); });`;
+    expect(codes(src)).not.toContain("JS23");
+  });
+
+  it("does not flag JS23 when assertions are delegated to a helper (count indeterminate)", () => {
+    const src = `function assertUserShape(u){ expect(u.id).toBeDefined(); expect(u.name).toBeDefined(); }\ntest("user", async () => { expect.assertions(2); const u = await fetchUser(); assertUserShape(u); });`;
+    expect(codes(src)).not.toContain("JS23");
+  });
+
+  // --- JS24: Cypress query chain with no terminating assertion ----------------
+  it("JS24: cy.get used as a statement with no .should/.then", () => {
+    expect(codes(`it("x", () => { cy.get(".btn"); });`, "login.cy.ts")).toContain("JS24");
+  });
+
+  it("does not flag JS24 when the chain ends in .should", () => {
+    expect(codes(`it("x", () => { cy.get(".btn").should("be.visible"); });`, "login.cy.ts")).not.toContain("JS24");
+  });
+
+  it("does not flag JS24 when the chain asserts in .then", () => {
+    expect(codes(`it("x", () => { cy.get(".btn").then(($el) => { expect($el).to.exist(); }); });`, "login.cy.ts")).not.toContain("JS24");
+  });
+
+  it("does not flag JS24 for an action command (cy.click)", () => {
+    expect(codes(`it("x", () => { cy.get(".btn").click(); });`, "login.cy.ts")).not.toContain("JS24");
+  });
+
+  // --- JS8 spyOn form (#48) ---------------------------------------------------
+  it("JS8: spyOn the SUT with a canned return then assert it directly", () => {
+    const src = `test("x", () => { jest.spyOn(svc, "fetch").mockReturnValue(42); expect(svc.fetch()).toBe(42); });`;
+    expect(codes(src)).toContain("JS8");
+  });
+
+  it("does not flag JS8 when spying a collaborator, not the asserted subject", () => {
+    const src = `test("x", () => { jest.spyOn(db, "read").mockReturnValue(1); expect(svc.run()).toBe(2); });`;
+    expect(codes(src)).not.toContain("JS8");
+  });
+
+  it("does not flag JS8 when asserting on the spy handle itself", () => {
+    const src = `test("x", () => { const spy = jest.spyOn(svc, "fetch").mockReturnValue(1); svc.fetch(); expect(spy).toHaveBeenCalled(); });`;
+    expect(codes(src)).not.toContain("JS8");
+  });
+
+  it("does not flag JS8 spyOn across different test bodies (test-local scope)", () => {
+    const src = `test("A", () => { jest.spyOn(svc, "fetch").mockReturnValue(42); doSomething(); });\ntest("B", () => { expect(svc.compute()).toBe(7); });`;
+    expect(codes(src)).not.toContain("JS8");
+  });
+
+  // --- JS3 inline-snapshot refinement (#50) -----------------------------------
+  it("JS3: empty inline snapshot carries the self-writing detail", () => {
+    const src = `test("x", () => { expect(tree).toMatchInlineSnapshot(); });`;
+    expect(detail(src, "JS3")).toMatch(/writing itself/);
+  });
+
+  it("JS3: a populated inline snapshot keeps the plain snapshot detail", () => {
+    const src = "test(\"x\", () => { expect(tree).toMatchInlineSnapshot(`<div />`); });";
+    expect(detail(src, "JS3")).toBe("the only assertion is a snapshot");
+  });
+
+  // --- #49 --enable / --disable precedence (effectiveConf) --------------------
+  it("--enable flips a default-off code on at its catalog severity", () => {
+    expect(effectiveConf("D8", {})).toBe("off");
+    expect(effectiveConf("D8", { cliEnable: new Set(["D8"]) })).toBe("low");
+  });
+
+  it("--disable wins over --enable (a code both enabled and disabled stays off)", () => {
+    const opts = { cliEnable: new Set(["D8"]), cliDisable: new Set(["D8"]) };
+    expect(effectiveConf("D8", opts)).toBe("off");
   });
 
   it("clean test produces no findings", () => {

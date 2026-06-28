@@ -79,6 +79,51 @@ function expectRooted(e: ts.Expression | undefined): boolean {
   return false;
 }
 
+// --- JS24: Cypress query chain with no terminating assertion ---------------
+const CY_QUERY_COMMANDS = new Set(["get", "find", "contains"]);
+
+/** True if any `expect(...)` call appears under `scope` (any matcher form, or a
+ *  bare expect). Used to keep a cy chain clean when it asserts inside a .then. */
+function containsExpectCall(scope: ts.Node): boolean {
+  let found = false;
+  const walk = (n: ts.Node) => {
+    if (found) return;
+    if (ts.isCallExpression(n) && expectRooted(n)) { found = true; return; }
+    ts.forEachChild(n, walk);
+  };
+  walk(scope);
+  return found;
+}
+
+/** True if a call chain rooted at `cy` ends in a query command (get/find/contains)
+ *  and carries no terminating `.should`/`.and` and no `expect(...)` inside a `.then`
+ *  callback — so it produces a subject that is never asserted. Action commands
+ *  (click/type/visit/...) as the outermost call do something, so they stay clean.
+ *  `expr` is the outermost call of the statement. */
+function isUnassertedCyQuery(expr: ts.CallExpression): boolean {
+  if (rootIdent(expr) !== "cy") return false;
+  // outermost command must be a query, not an action (action does work, not just query)
+  if (!ts.isPropertyAccessExpression(expr.expression)) return false;
+  if (!CY_QUERY_COMMANDS.has(expr.expression.name.text)) return false;
+  // scan the whole chain for a terminating assertion: any .should/.and, or an
+  // expect(...) inside a .then(cb) callback. Either keeps it clean.
+  let cur: ts.Node = expr;
+  const visit = (n: ts.Node): boolean => {
+    if (ts.isCallExpression(n) && ts.isPropertyAccessExpression(n.expression)) {
+      const m = n.expression.name.text;
+      if (m === "should" || m === "and") return true;
+      if (m === "then") {
+        const cb = n.arguments.find((a) => ts.isArrowFunction(a) || ts.isFunctionExpression(a));
+        if (cb && containsExpectCall(cb)) return true;
+      }
+    }
+    let asserted = false;
+    ts.forEachChild(n, (c) => { if (visit(c)) asserted = true; });
+    return asserted;
+  };
+  return !visit(cur);
+}
+
 function literalTruthiness(e: ts.Expression | undefined): boolean | null {
   if (!e) return null;
   if (e.kind === ts.SyntaxKind.TrueKeyword) return true;
@@ -305,6 +350,124 @@ function matchersUnder(scope: ts.Node): string[] {
     ts.forEachChild(n, walk);
   };
   ts.forEachChild(scope, walk);
+  return out;
+}
+
+/** True if any snapshot matcher under `scope` is an inline snapshot with no
+ *  baseline yet: `toMatchInlineSnapshot()` / `toThrowErrorMatchingInlineSnapshot()`
+ *  with no argument, or an empty/whitespace-only string-literal baseline. On the
+ *  first run the runner writes the snapshot from the output itself, so it passes
+ *  by construction. A populated inline snapshot has a real baseline and is not this. */
+function hasEmptyInlineSnapshot(scope: ts.Node): boolean {
+  let found = false;
+  const walk = (n: ts.Node) => {
+    if (found) return;
+    if (ts.isCallExpression(n)) {
+      const chain = expectChain(n);
+      if (chain && (chain.matcher === "toMatchInlineSnapshot" ||
+                    chain.matcher === "toThrowErrorMatchingInlineSnapshot")) {
+        const a0 = chain.args[0];
+        if (a0 === undefined) { found = true; return; }
+        if ((ts.isStringLiteral(a0) || ts.isNoSubstitutionTemplateLiteral(a0)) &&
+            a0.text.trim() === "") { found = true; return; }
+      }
+    }
+    ts.forEachChild(n, walk);
+  };
+  ts.forEachChild(scope, walk);
+  return found;
+}
+
+/** The numeric N of an `expect.assertions(N)` call (N a numeric literal), else
+ *  null. `expect.hasAssertions()` carries no count and is not this. */
+function expectAssertionsCount(call: ts.CallExpression): number | null {
+  if (calleeName(call.expression) !== "expect.assertions") return null;
+  const a0 = call.arguments[0];
+  if (a0 && ts.isNumericLiteral(a0)) return Number(a0.text);
+  return null;
+}
+
+/** JS23 expect accounting. `unconditional` is the count of expect-chain matcher
+ *  calls guaranteed to run: a direct ExpressionStatement on the test body's spine
+ *  (optionally awaited). `indeterminate` is true when any other expect-chain call
+ *  exists in the body (in a loop, branch, try, switch, callback, .then, or an
+ *  expression operand) — its run count cannot be proven, so a shortfall is not
+ *  provable and JS23 must be suppressed (FP-averse: a false positive is worse than
+ *  a miss). Stops at nested functions only for the spine count, but the
+ *  indeterminate scan walks the whole body (a .then callback IS indeterminate). */
+function expectAccounting(body: ts.Block): { unconditional: number; indeterminate: boolean } {
+  const spine = new Set<ts.Node>();
+  let unconditional = 0;
+  for (const st of body.statements) {
+    if (!ts.isExpressionStatement(st)) continue;
+    let e: ts.Expression = st.expression;
+    if (ts.isAwaitExpression(e)) e = e.expression;
+    if (ts.isCallExpression(e) && expectChain(e)) { unconditional++; spine.add(e); }
+  }
+  // Anything that is not the proven-unconditional expect spine makes the count
+  // indeterminate: an off-spine expect chain (loop/branch/.then/operand), or any
+  // other call — a helper or setup call may carry assertions the count cannot see.
+  // Do not descend into a spine chain (its inner expect()/matcher calls are
+  // accounted, not separate helpers).
+  let indeterminate = false;
+  const walk = (n: ts.Node): void => {
+    if (indeterminate) return;
+    if (spine.has(n)) return; // whole spine chain already counted
+    if (ts.isCallExpression(n)) {
+      const nm = calleeName(n.expression);
+      if (nm !== "expect.assertions" && nm !== "expect.hasAssertions") { indeterminate = true; return; }
+    }
+    ts.forEachChild(n, walk);
+  };
+  walk(body);
+  return { unconditional, indeterminate };
+}
+
+/** JS8 (spyOn form): collect `{root -> line}` for every jest.spyOn/vi.spyOn target
+ *  whose return was canned (mockReturnValue/mockResolvedValue/mockRejectedValue/
+ *  mockImplementation) under `scope`. Test-local on purpose: a spyOn is hoisted only
+ *  within its own test body, unlike the module-wide jest.mock form. */
+function cannedSpyTargets(scope: ts.Node): Map<string, number> {
+  const out = new Map<string, number>();
+  const sf = scope.getSourceFile();
+  const walk = (n: ts.Node): void => {
+    if (ts.isCallExpression(n) &&
+        /^(mockReturnValue|mockResolvedValue|mockRejectedValue|mockImplementation)$/.test(
+          calleeName(n.expression).split(".").pop() ?? "")) {
+      let base: ts.Expression = n.expression;
+      while (ts.isPropertyAccessExpression(base) || ts.isCallExpression(base)) {
+        if (ts.isCallExpression(base)) {
+          const cn = calleeName(base.expression);
+          if (cn === "jest.spyOn" || cn === "vi.spyOn") {
+            const tr = base.arguments[0] && rootIdent(base.arguments[0]);
+            if (tr) out.set(tr, lineOf(sf, n));
+            break;
+          }
+        }
+        base = ts.isCallExpression(base) ? base.expression
+          : (base as ts.PropertyAccessExpression).expression;
+      }
+    }
+    ts.forEachChild(n, walk);
+  };
+  walk(scope);
+  return out;
+}
+
+/** Root identifiers used as an expect subject under `scope` (`expect(a.b).m()` -> "a"). */
+function expectSubjectRoots(scope: ts.Node): Set<string> {
+  const out = new Set<string>();
+  const walk = (n: ts.Node): void => {
+    if (ts.isCallExpression(n)) {
+      const chain = expectChain(n);
+      if (chain && chain.subject) {
+        const r = rootIdent(chain.subject);
+        if (r) out.add(r);
+      }
+    }
+    ts.forEachChild(n, walk);
+  };
+  walk(scope);
   return out;
 }
 
@@ -553,7 +716,9 @@ export function analyze(sf: ts.SourceFile): Finding[] {
           } else if (hasAssertion(cb)) {
             const ms = matchersUnder(cb);
             if (ms.length > 0 && ms.every((m) => SNAPSHOT_MATCHERS.has(m))) {
-              push(line, "JS3", "the only assertion is a snapshot");
+              push(line, "JS3", hasEmptyInlineSnapshot(cb)
+                ? "the only assertion is an empty inline snapshot — it passes by writing itself on first run"
+                : "the only assertion is a snapshot");
             }
             // C21: the test has at least one assertion in its own scope and none of
             // them is guaranteed to run unconditionally (all behind a condition, a
@@ -568,6 +733,44 @@ export function analyze(sf: ts.SourceFile): Finding[] {
             if (ownAsserts.length > 0 &&
                 !hasUnconditionalAssertion(cb.body, isAssertionNode, literalTruthiness, deadAssertSet)) {
               push(line, "C21", "every assertion is guarded by a condition");
+            }
+          }
+
+          // JS23: expect.assertions(N) with N a numeric literal, but fewer
+          // unconditional reachable non-nested expect() matcher calls than N — the
+          // guard can never be satisfied. FP-averse: any expect in a loop, branch,
+          // callback, or helper is indeterminate, so the count is undercounted and a
+          // shortfall is only reported when it is provable. expect.hasAssertions()
+          // carries no count and is skipped. Distinct from the deliberately-skipped JS16.
+          let assertionsGuard: { line: number; n: number } | null = null;
+          forEachNoNesting(cb.body, (n) => {
+            if (ts.isCallExpression(n)) {
+              const cnt = expectAssertionsCount(n);
+              if (cnt !== null) assertionsGuard = { line: lineOf(sf, n), n: cnt };
+            }
+          });
+          if (assertionsGuard !== null) {
+            const guard = assertionsGuard as { line: number; n: number };
+            const acc = expectAccounting(cb.body);
+            if (!acc.indeterminate && acc.unconditional < guard.n) {
+              push(guard.line, "JS23",
+                `expect.assertions(${guard.n}) but only ${acc.unconditional} unconditional expect() call(s) run`);
+            }
+          }
+
+          // JS8 (spyOn form): test-local. A spyOn target with a canned return that is
+          // also an expect subject IN THE SAME test body is a self-mock — the test
+          // asserts the canned value. Scoped to cb.body so a spy in one test never
+          // matches an assertion in another (the jest.mock module form, hoisted
+          // file-wide, is handled separately after the walk).
+          const spied = cannedSpyTargets(cb.body);
+          if (spied.size > 0) {
+            const subjects = expectSubjectRoots(cb.body);
+            for (const [tr, ln] of spied) {
+              if (subjects.has(tr)) {
+                push(ln, "JS8", `${tr} is spied with a canned return and asserted directly`);
+                break;
+              }
             }
           }
 
@@ -801,8 +1004,17 @@ export function analyze(sf: ts.SourceFile): Finding[] {
         const isVueComponentQuery = qleaf === "findComponent" || qleaf === "findAllComponents";
         const isVueSelectorQuery = (qleaf === "find" || qleaf === "findAll") &&
           node.arguments.length > 0 && ts.isStringLiteral(node.arguments[0]);
-        if (isRtlQuery || isVueComponentQuery || isVueSelectorQuery) {
+        // A cy-rooted chain belongs to JS24, not JS13: cy.get("ul").find("li") ends in
+        // .find("li") and would otherwise trip the Vue-selector heuristic (double-report).
+        if ((isRtlQuery || isVueComponentQuery || isVueSelectorQuery) && rootIdent(node) !== "cy") {
           push(lineOf(sf, node), "JS13", `${qleaf}() result is not asserted`);
+        }
+        // JS24: the cy.* analogue of JS13 — a Cypress query chain (cy.get/find/
+        // contains) as a statement with no terminating .should/.and and no expect
+        // in a .then callback. Only query commands produce a subject; action
+        // commands (click/type/visit/...) do work and stay clean.
+        if (isUnassertedCyQuery(node)) {
+          push(lineOf(sf, node), "JS24", `cy query (${qleaf}) result is not asserted`);
         }
       }
 

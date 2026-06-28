@@ -42,6 +42,7 @@ Usage:
   falsegreen-js --config-audit    audit Jest/Vitest config (project-layer PL codes)
   falsegreen-js --diagnostics     also report the opt-in maintainability group (D*/M*)
   falsegreen-js --disable C7,JS3  turn off specific codes
+  falsegreen-js --enable D8,M2    re-activate off/opt-in codes at catalog severity (--disable wins)
   falsegreen-js --version
   falsegreen-js --help
 
@@ -62,6 +63,7 @@ function parseArgs(argv: string[]) {
   let baseline: string | undefined;
   let writeBaselinePath: string | undefined;
   const disable = new Set<string>();
+  const enable = new Set<string>();
   // An optional-value flag (--baseline / --write-baseline) consumes the next
   // token only when it is a value, not another flag.
   const optionalValue = (next: string | undefined): string | undefined =>
@@ -106,6 +108,12 @@ function parseArgs(argv: string[]) {
     } else if (a.startsWith("--disable=")) {
       a.slice("--disable=".length).split(",").map((s) => s.trim())
         .filter(Boolean).forEach((c) => disable.add(c));
+    } else if (a === "--enable") {
+      const v = argv[++i] ?? "";
+      v.split(",").map((s) => s.trim()).filter(Boolean).forEach((c) => enable.add(c));
+    } else if (a.startsWith("--enable=")) {
+      a.slice("--enable=".length).split(",").map((s) => s.trim())
+        .filter(Boolean).forEach((c) => enable.add(c));
     } else if (a.startsWith("-")) {
       process.stderr.write(`falsegreen-js: unknown option ${a}\n`);
       process.exit(2);
@@ -113,7 +121,7 @@ function parseArgs(argv: string[]) {
   }
   const fmt: OutputFormat = format ?? (json ? "json" : "text");
   return {
-    paths, fmt, staged, help, version, diagnostics, configAudit, disable,
+    paths, fmt, staged, help, version, diagnostics, configAudit, disable, enable,
     output, baseline, writeBaselinePath,
   };
 }
@@ -216,7 +224,9 @@ export function renderText(findings: Finding[]): string {
 
 function scan(opt: ReturnType<typeof parseArgs>): Finding[] {
   const config = loadConfig();
-  const scanOpts: ScanOptions = { config, cliDisable: opt.disable, diagnostics: opt.diagnostics };
+  const scanOpts: ScanOptions = {
+    config, cliDisable: opt.disable, cliEnable: opt.enable, diagnostics: opt.diagnostics,
+  };
   if (opt.staged) return stagedFiles().flatMap((f) => scanFile(f, scanOpts));
   return scanPaths(opt.paths.length ? opt.paths : ["."], scanOpts);
 }
