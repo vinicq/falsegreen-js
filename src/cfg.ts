@@ -155,7 +155,22 @@ export function hasUnconditionalAssertion(
   body: ts.Block,
   isAssertion: IsAssertion,
   litTruth: LitTruth,
+  deadAsserts: ReadonlySet<ts.Node> = new Set(),
 ): boolean {
+  // An assertion already flagged C20 (dead code) is unreachable, so it is never the
+  // guaranteed-spine assertion. Walk a leaf statement's expression for a dead node so
+  // a dead top-level assertion does not mask a live conditional one (C21 must still
+  // fire). Scoped to the leaf expression only — a single ExpressionStatement/return
+  // has no sibling live asserts, so finding any dead node means this leaf is dead (#62).
+  const exprHasDeadAssertion = (e: ts.Expression): boolean => {
+    let dead = false;
+    const visit = (n: ts.Node): void => {
+      if (deadAsserts.has(n)) { dead = true; return; }
+      ts.forEachChild(n, visit);
+    };
+    visit(e);
+    return dead;
+  };
   // An assertion that is itself the spine expression (not behind a short-circuit
   // or ternary): expect(...).m(), await expect(...), (expect(...)).
   const directAssertion = (e: ts.Expression): boolean => {
@@ -179,10 +194,14 @@ export function hasUnconditionalAssertion(
   };
 
   const stmtGuaranteed = (st: ts.Statement): boolean => {
-    if (ts.isExpressionStatement(st)) return directAssertion(st.expression);
+    if (ts.isExpressionStatement(st)) {
+      if (exprHasDeadAssertion(st.expression)) return false;
+      return directAssertion(st.expression);
+    }
     if (ts.isBlock(st)) return listGuaranteed(st.statements);
     if (ts.isLabeledStatement(st)) return stmtGuaranteed(st.statement);
-    if (ts.isReturnStatement(st)) return st.expression !== undefined && directAssertion(st.expression);
+    if (ts.isReturnStatement(st)) return st.expression !== undefined
+      && !exprHasDeadAssertion(st.expression) && directAssertion(st.expression);
     if (ts.isIfStatement(st)) {
       const t = litTruth(st.expression);
       if (t === true) return stmtGuaranteed(st.thenStatement);

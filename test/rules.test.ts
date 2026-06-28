@@ -69,6 +69,10 @@ describe("falsegreen-js rules", () => {
     expect(codes(`import { randomUUID } from "node:crypto";\ntest("x", () => { const id = randomUUID(); expect(id).toHaveLength(36); });`)).toContain("C16");
   });
 
+  it("C16: performance.now() reads the clock", () => {
+    expect(codes(`test("x", () => { const t = performance.now(); expect(t).toBeGreaterThan(0); });`)).toContain("C16");
+  });
+
   it("JS1: focused test it.only", () => {
     expect(codes(`it.only("x", () => { expect(1).toBe(1); });`)).toContain("JS1");
   });
@@ -466,6 +470,45 @@ describe("falsegreen-js rules", () => {
 
   it("does not flag C20 for a switch without a default (a no-match falls through)", () => {
     expect(codes(`test("x", () => { switch (k) { case 1: return 1; } expect(a).toBe(b); });`)).not.toContain("C20");
+  });
+
+  // --- C20 owns a dead-code-only assertion; C21 must not also fire (#62) ----
+  it("C20 owns a dead-code-only assertion: C21 does not also fire", () => {
+    const c = codes(`test("x", () => { switch (k) { case 1: return; expect(a).toBe(b); } });`);
+    expect(c).toContain("C20");
+    expect(c).not.toContain("C21");
+  });
+
+  it("C21 still fires when a live conditional assertion remains alongside a dead top-level one", () => {
+    // The trailing assertion is dead (after the unconditional return) so it raises C20;
+    // the guarded one is live but conditional, so C21 must still fire. The dead assertion
+    // must not mask C21 by reading as a guaranteed spine assertion (#62).
+    const c = codes(`test("x", () => { if (j) { expect(a).toBe(b); } return; expect(c).toBe(d); });`);
+    expect(c).toContain("C20");
+    expect(c).toContain("C21");
+  });
+
+  // --- #63 characterization: cfg loop/switch/IIFE/labeled-break edge cases ---
+  it("does not flag C20 for an assertion after a for-in loop (may run zero times)", () => {
+    expect(codes(`test("x", () => { for (const k in obj) { doThing(k); } expect(a).toBe(b); });`)).not.toContain("C20");
+  });
+
+  it("C21: the only assertion lives in a for-in loop body", () => {
+    expect(codes(`test("x", () => { for (const k in obj) { expect(obj[k]).toBe(1); } });`)).toContain("C21");
+  });
+
+  it("C20: assertion after a labeled break-to-outer is dead in the inner block", () => {
+    expect(codes("test(\"x\", () => { outer: { break outer; expect(a).toBe(b); } });")).toContain("C20");
+  });
+
+  it("does not flag C20 for an assertion after a switch case that falls through without escaping", () => {
+    expect(codes(`test("x", () => { switch (k) { case 1: doThing(); case 2: expect(a).toBe(b); } });`)).not.toContain("C20");
+  });
+
+  it("does not flag C21 for the only assertion held in an IIFE that runs unconditionally", () => {
+    // An immediately-invoked function runs once at the test top level; its assertion is
+    // not behind a condition. FP-averse: must not be a phantom C21.
+    expect(codes(`test("x", () => { (() => { expect(a).toBe(b); })(); });`)).not.toContain("C21");
   });
 
   // --- C21 via structured reachability (cfg.ts) ----------------------------
