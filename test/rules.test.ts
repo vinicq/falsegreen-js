@@ -36,6 +36,31 @@ describe("falsegreen-js rules", () => {
     expect(codes(`test("x", () => { const r = Math.random(); expect(r).toBeLessThan(1); });`)).toContain("C16");
   });
 
+  it("C16: new Date() with no argument reads the clock", () => {
+    expect(codes(`test("x", () => { const t = new Date(); expect(t.getFullYear()).toBe(2026); });`)).toContain("C16");
+  });
+
+  it("does not flag C16 for new Date(<literal>) (a fixed instant)", () => {
+    expect(codes(`test("x", () => { const t = new Date(0); expect(t.getTime()).toBe(0); });`)).not.toContain("C16");
+  });
+
+  it("does not flag C16 for new Date(<string>) or new Date(<expr>) (a fixed instant)", () => {
+    expect(codes(`test("x", () => { const t = new Date("2020-01-01"); expect(t.getUTCFullYear()).toBe(2020); });`)).not.toContain("C16");
+    expect(codes(`test("x", () => { const t = new Date(ms); expect(t).toBeDefined(); });`)).not.toContain("C16");
+  });
+
+  it("C16: crypto.randomUUID without a seed", () => {
+    expect(codes(`test("x", () => { const id = crypto.randomUUID(); expect(id).toHaveLength(36); });`)).toContain("C16");
+  });
+
+  it("C16: crypto.getRandomValues without a seed", () => {
+    expect(codes(`test("x", () => { const b = crypto.getRandomValues(new Uint8Array(4)); expect(b).toBeDefined(); });`)).toContain("C16");
+  });
+
+  it("does not flag C16 broadened sources when fake timers are installed", () => {
+    expect(codes(`beforeEach(() => { vi.useFakeTimers(); });\ntest("x", () => { const t = new Date(); expect(t).toBeDefined(); });`)).not.toContain("C16");
+  });
+
   it("JS1: focused test it.only", () => {
     expect(codes(`it.only("x", () => { expect(1).toBe(1); });`)).toContain("JS1");
   });
