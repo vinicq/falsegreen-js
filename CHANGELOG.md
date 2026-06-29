@@ -6,6 +6,21 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+## [0.6.2] - 2026-06-29
+
+### Fixed
+
+- Global output dedup (#64): `scanPaths` now collapses identical findings on
+  `(file, line, code, detail)` before emitting, matching the Python reference
+  scanner. A detector that pushes the same finding twice (an overlapping pass on
+  one line) surfaced as a duplicate before; now it appears once. Two different
+  codes on the same line both survive, since the key includes the code: distinct
+  false-green mechanisms on one line stay distinct.
+- Hardened the dead-assertion threading (#64, L11): the dead set computed by C20
+  now feeds every reader of those assertions through one `liveAssertion`
+  predicate plus the spine walk, so a future reader cannot read a dead assertion
+  as live and suppress C21 by mistake (the js #62 class of bug).
+
 ## [0.6.1] - 2026-06-29
 
 ### Fixed
