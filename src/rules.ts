@@ -1044,6 +1044,17 @@ export function analyze(sf: ts.SourceFile): Finding[] {
             push(lineOf(sf, a), "C20", "assertion in unreachable code (after a return/throw/exit) never runs");
           }
           const deadAssertSet = new Set<ts.Node>(deadAsserts);
+          // L11 (#64): once C20 owns a line as unreachable, EVERY reader of these
+          // assertions must suppress consistently — suppressing in one reader but
+          // not another already regressed once (js #62). To keep the dead set from
+          // being threaded by hand into each reader, route every "is this a live
+          // assertion?" check through this single predicate, and pass deadAssertSet
+          // to any spine/aggregate walk that reads the same lines. One source of
+          // truth: a reader that forgets it reads dead asserts as live, which the
+          // gate catches, but the structure makes that the awkward path, not the
+          // default. Global output dedup (scan.ts) is the backstop.
+          const liveAssertion = (n: ts.Node): boolean =>
+            isAssertionNode(n) && !deadAssertSet.has(n);
           // C48: dark patch — the test flips a known test-mode flag (process.env or a
           // module/settings flag) into test mode and then asserts, exercising the
           // product's test-only branch instead of real behaviour. v1: raw writes only.
@@ -1080,8 +1091,10 @@ export function analyze(sf: ts.SourceFile): Finding[] {
             // a dead-code-only test reports C20 alone, not a contradictory C20 + C21 (#62).
             const ownAsserts: ts.Node[] = [];
             forEachNoNesting(cb.body, (n) => {
-              if (isAssertionNode(n) && !deadAssertSet.has(n)) ownAsserts.push(n);
+              if (liveAssertion(n)) ownAsserts.push(n);
             });
+            // Both readers of these asserts (the ownAsserts count above and the
+            // spine walk below) consult the same dead set: the L11 invariant.
             if (ownAsserts.length > 0 &&
                 !hasUnconditionalAssertion(cb.body, isAssertionNode, literalTruthiness, deadAssertSet)) {
               push(line, "C21", "every assertion is guarded by a condition");
