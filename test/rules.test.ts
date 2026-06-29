@@ -891,4 +891,99 @@ describe("falsegreen-js rules", () => {
     const src = `test("greets", () => { expect(greet("Ana")).toBe("hello Ana"); });`;
     expect(codes(src)).toEqual([]);
   });
+
+  // --- field-validation precision fixes (#82) ---------------------------------
+
+  // JS30: literal-vs-literal still fires on the plain over-firing shape, but the
+  // force-fail-in-asserting-catch idiom and the inner-expect-under-matcher case go
+  // quiet (the inner expect is the unit under test, not a dead oracle).
+  it("JS30: a plain literal-vs-literal expect still fires", () => {
+    expect(codes(`it("x", () => { expect(1).toBe(2); });`)).toContain("JS30");
+  });
+
+  it("does not flag JS30 for the force-fail shape inside a try whose catch asserts on the error", () => {
+    const src = `it("x", () => { try { f(); expect(true).toBe(false); } catch (e) { expect(e.message).toMatch(/boom/); } });`;
+    expect(codes(src)).not.toContain("JS30");
+  });
+
+  it("does not flag JS30 when the inner expect is the subject of an enclosing matcher", () => {
+    const src = `it("x", () => { expect(() => expect(1).toBe(2)).toThrow(); });`;
+    expect(codes(src)).not.toContain("JS30");
+  });
+
+  it("does not flag JS30 for a literal-vs-literal expect inside a skipped block", () => {
+    expect(codes(`xit("x", () => { expect(1).toBe(2); });`)).not.toContain("JS30");
+  });
+
+  // JS31: still fires when the catch swallows a parse-call throw with no oracle, but
+  // goes quiet when the test has an unconditional assertion outside an incidental-IO try.
+  it("JS31: try parses config, empty catch swallows, no outside oracle", () => {
+    expect(codes(`it("x", () => { try { parseConfig(bad); } catch (e) {} });`)).toContain("JS31");
+  });
+
+  it("does not flag JS31 when an unconditional assertion runs outside an incidental-IO try", () => {
+    const src = `it("x", async () => { try { fs.writeFileSync(p, t); } catch (e) {}; await expect(page.locator("h1")).toBeVisible(); });`;
+    expect(codes(src)).not.toContain("JS31");
+  });
+
+  // JS25: a param-typed receiver still fires; a const-bound non-empty array literal
+  // receiver is proven to run the callback at least once and goes quiet.
+  it("JS25: forEach over a parameter receiver still fires", () => {
+    expect(codes(`it("x", () => { items.forEach((i) => expect(i).toBeTruthy()); });`)).toContain("JS25");
+  });
+
+  it("does not flag JS25 when the receiver is bound to a non-empty array literal", () => {
+    const src = `it("x", () => { const cases = [1, 2, 3]; cases.forEach((c) => expect(c).toBeGreaterThan(0)); });`;
+    expect(codes(src)).not.toContain("JS25");
+  });
+
+  it("JS25 const-binding guard does not disturb it.each/describe.each tables", () => {
+    expect(codes(`it.each([])("x", () => { expect(1).toBe(1); });`)).not.toContain("JS25");
+  });
+
+  // JS27: a weak call-counter still fires; a CalledWith carrying real args is a
+  // behavioral oracle and goes quiet.
+  it("JS27: a bare toHaveBeenCalled on a local double still fires", () => {
+    expect(codes(`it("x", () => { const s = jest.fn(); run(s); expect(s).toHaveBeenCalled(); });`)).toContain("JS27");
+  });
+
+  it("does not flag JS27 when the oracle is toHaveBeenCalledWith carrying args", () => {
+    const src = `it("x", () => { const s = jest.fn(); submit(s, { a: 1 }); expect(s).toHaveBeenCalledWith({ a: 1 }); });`;
+    expect(codes(src)).not.toContain("JS27");
+  });
+
+  it("JS27: toHaveBeenNthCalledWith with only the call index is still a bare counter", () => {
+    // arg 0 of NthCalledWith is the call INDEX, not a value, so a lone index asserts
+    // only that an Nth call happened — the call-counter JS27 targets.
+    expect(codes(`it("x", () => { const s = jest.fn(); run(s); expect(s).toHaveBeenNthCalledWith(1); });`)).toContain("JS27");
+  });
+
+  it("does not flag JS27 when toHaveBeenNthCalledWith carries an argument value past the index", () => {
+    const src = `it("x", () => { const s = jest.fn(); run(s); expect(s).toHaveBeenNthCalledWith(1, "x"); });`;
+    expect(codes(src)).not.toContain("JS27");
+  });
+
+
+  // C16: a fixed setTimeout delay is deterministic and no longer flagged; Math.random
+  // (and the rest of the clock/crypto family) still fires.
+  it("C16: Math.random in a test still fires", () => {
+    expect(codes(`it("x", () => { const r = Math.random(); expect(r).toBeLessThan(1); });`)).toContain("C16");
+  });
+
+  it("does not flag C16 for a fixed setTimeout delay (deterministic, not nondeterminism)", () => {
+    const src = `it("x", async () => { await new Promise((r) => setTimeout(r, 0)); expect(state).toBe("done"); });`;
+    expect(codes(src)).not.toContain("C16");
+  });
+
+  // C21: a for loop with a literal integer bound runs its body at least once, so the
+  // only assertion is unconditional and C21 does not fire.
+  it("does not flag C21 for the only assertion in a literal-bounded for loop", () => {
+    const src = `it("x", () => { for (let i = 0; i < 3; i++) { expect(i).toBeGreaterThanOrEqual(0); } });`;
+    expect(codes(src)).not.toContain("C21");
+  });
+
+  it("C21 still fires when the for bound is not a literal (loop may run zero times)", () => {
+    expect(codes(`it("x", () => { for (let i = 0; i < n; i++) { expect(i).toBeGreaterThanOrEqual(0); } });`)).toContain("C21");
+  });
 });
+

@@ -1,6 +1,6 @@
 {
   "name": "falsegreen-js",
-  "version": "0.6.0",
+  "version": "0.6.1",
   "description": "Find JavaScript/TypeScript unit tests that give false positives: green tests that protect nothing, and tests that pass while asserting the wrong thing. Deterministic AST scanner, sibling of falsegreen (Python).",
   "keywords": [
     "jest",

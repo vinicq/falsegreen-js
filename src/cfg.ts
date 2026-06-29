@@ -15,8 +15,40 @@ import ts from "typescript";
 type IsAssertion = (n: ts.Node) => boolean;
 type LitTruth = (e: ts.Expression | undefined) => boolean | null;
 
+/** Numeric value of an integer literal expression (handles a `-N` unary minus), else null. */
+function intLiteralValue(e: ts.Expression): number | null {
+  if (ts.isNumericLiteral(e)) return Number(e.text);
+  if (ts.isPrefixUnaryExpression(e) && e.operator === ts.SyntaxKind.MinusToken &&
+      ts.isNumericLiteral(e.operand)) return -Number(e.operand.text);
+  return null;
+}
+
+/** True only for a provably-once ascending counter loop: `for (let i = <int>; i < <int>; ...)`
+ *  or `i <= <int>`, with the initial value strictly inside the bound so the body runs at
+ *  least once. Any non-literal bound, descending test, or missing init/cond is not provable
+ *  and returns false (the loop may run zero times). #82. */
+function forRunsAtLeastOnce(st: ts.ForStatement): boolean {
+  if (!st.initializer || !st.condition || !ts.isBinaryExpression(st.condition)) return false;
+  // initial value of the single counter declared in the init
+  let counter: string | null = null;
+  let init: number | null = null;
+  if (ts.isVariableDeclarationList(st.initializer) && st.initializer.declarations.length === 1) {
+    const d = st.initializer.declarations[0];
+    if (ts.isIdentifier(d.name) && d.initializer) { counter = d.name.text; init = intLiteralValue(d.initializer); }
+  }
+  if (counter === null || init === null) return false;
+  const cond = st.condition;
+  if (!ts.isIdentifier(cond.left) || cond.left.text !== counter) return false;
+  const bound = intLiteralValue(cond.right);
+  if (bound === null) return false;
+  if (cond.operatorToken.kind === ts.SyntaxKind.LessThanToken) return init < bound;
+  if (cond.operatorToken.kind === ts.SyntaxKind.LessThanEqualsToken) return init <= bound;
+  return false;
+}
+
 /** A call to process.exit(...) — control leaves the process, so it terminates. */
 function isProcessExit(e: ts.Expression): boolean {
+
   return (
     ts.isCallExpression(e) &&
     ts.isPropertyAccessExpression(e.expression) &&
@@ -218,9 +250,18 @@ export function hasUnconditionalAssertion(
     // do/while is the one loop whose body always runs at least once, so an
     // assertion in it IS unconditional (the condition only controls repetition).
     if (ts.isDoStatement(st)) return stmtGuaranteed(st.statement);
-    // for/while/for-of/for-in/switch/catch: their body is not guaranteed to run.
+    // A literal-bounded for / for-of over a non-empty array literal runs its body at
+    // least once, so an assertion inside IS unconditional (#82). Conservative: only
+    // the provable ascending integer counter and the non-empty array literal; any
+    // other loop stays not-guaranteed. Suppressing C21 here is FP-averse (a wrong
+    // guarantee only causes a C21 miss, never a false C21).
+    if (ts.isForStatement(st) && forRunsAtLeastOnce(st)) return stmtGuaranteed(st.statement);
+    if (ts.isForOfStatement(st) && ts.isArrayLiteralExpression(st.expression) &&
+        st.expression.elements.length > 0) return stmtGuaranteed(st.statement);
+    // for-in / while / switch / catch: their body is not guaranteed to run.
     return false;
   };
+
 
   const listGuaranteed = (stmts: readonly ts.Statement[]): boolean =>
     stmts.some(stmtGuaranteed);
