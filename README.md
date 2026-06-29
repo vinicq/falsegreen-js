@@ -115,6 +115,258 @@ jobs:
 
 Each finding carries a code and a confidence. HIGH codes are near-certain and block the commit; LOW codes warn and want a human look. Codes shared with the Python scanner keep the same id (`C5`, `C7`, `C2b`...); `JS*` codes are JS/TS-specific (`JS1` focused `it.only`, `JS2` `expect` with no matcher, `JS5` an async query never awaited). The full list is in the [Case catalog](#case-catalog) below and the [online docs](https://vinicq.github.io/falsegreen-docs/).
 
+## Usage and configuration reference
+
+The quick guide above gets you running. This section is the complete reference: every install channel, every flag, every output format, every config knob, and the CI recipes. All command output shown here is captured from a real run, not invented.
+
+### Install
+
+| Channel | Command | When to use |
+|---|---|---|
+| dev dependency | `npm install -D falsegreen-js` | the normal install; pins it in `package.json`, runs as `npx falsegreen-js` |
+| global | `npm install -g falsegreen-js` | the `falsegreen-js` command on your PATH everywhere |
+| no install | `npx falsegreen-js .` | one-off, runs the latest published version |
+| from a clone | `node dist/cli.js .` after `npm run build` | hacking on the scanner |
+
+Version floor: **Node 18 or newer**. Covers `.js`, `.jsx`, `.ts`, `.tsx`, `.mjs`, `.cjs`, `.mts`, `.cts`. Pin a version in CI with `npm install -D falsegreen-js@0.6.2` or `npx falsegreen-js@0.6.2 .`.
+
+### Invocation
+
+```bash
+npx falsegreen-js                   # scan the current directory
+npx falsegreen-js src test          # scan several paths
+npx falsegreen-js src/foo.test.ts   # scan a single file
+npx falsegreen-js --staged          # only test files staged in git (pre-commit)
+node dist/cli.js .                  # from a built checkout, identical behaviour
+```
+
+There is no stdin mode: pass file or directory paths (or nothing, which scans the cwd). The scanner walks the paths for `.spec`/`.test` files in the eight extensions above; component files (`.vue`, `.svelte`) and templates are not test files and are skipped.
+
+### Output formats
+
+`--format text|json|sarif|junit` selects the shape (default `text`). `--json` is a shorthand for `--format json`. `--output PATH` writes to a file instead of stdout; a directory or trailing-slash path (`.falsegreen/`) receives `report.<ext>`.
+
+Fixture used for every sample below (`sum.test.ts`):
+
+```ts
+import { sum } from "./sum";
+
+test("sum adds numbers", () => {
+  const result = sum(2, 3);
+  expect(true).toBe(true);   // C5: always-true, line 5
+});
+
+test("sum is truthy", () => {
+  expect(sum(2, 3)).toBeTruthy();   // C6: weak check, line 9
+});
+```
+
+**text** (default):
+
+```
+sum.test.ts
+  HIGH C5   L5  always-true check (expect(true).toBe(true), assert(1))
+         both sides are the same literal
+         level: unit   fix: assert the real behaviour, not a constant or tautology
+  low  C6   L9  weak check — only verifies something came back (toBeTruthy/toBeDefined, length > 0)
+         only checks the value is present, not the expected result
+         level: unit   fix: assert the actual value, not just that something came back
+
+1 high, 1 low. https://github.com/vinicq/falsegreen-js
+By level: unit:2
+Top fixes:
+  C5 (1): assert the real behaviour, not a constant or tautology
+  C6 (1): assert the actual value, not just that something came back
+```
+
+**json** (`--json` or `--format json`): an envelope with `tool`, `version`, the judgment legend, and a `findings` array.
+
+```json
+{
+  "tool": "falsegreen-js",
+  "version": "0.6.2",
+  "oracleRegistryVersion": 2,
+  "judgments": { "J1": "does the assertion actually run?", "...": "..." },
+  "findings": [
+    {
+      "file": "sum.test.ts",
+      "line": 5,
+      "code": "C5",
+      "detail": "both sides are the same literal",
+      "confidence": "high",
+      "title": "always-true check (expect(true).toBe(true), assert(1))",
+      "level": "unit",
+      "riskGroup": "effectiveness",
+      "group": "false-positive",
+      "fix": "assert the real behaviour, not a constant or tautology"
+    }
+  ]
+}
+```
+
+**sarif** (`--format sarif`): SARIF 2.1.0 for GitHub code scanning. HIGH maps to `error`, LOW to `warning`, off to `note`; result tags carry the judgment (J1-J6), the risk group, and the level. Abridged:
+
+```json
+{
+  "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
+  "version": "2.1.0",
+  "runs": [
+    {
+      "tool": { "driver": {
+        "name": "falsegreen-js",
+        "version": "0.6.2",
+        "rules": [
+          { "id": "C5", "defaultConfiguration": { "level": "error" },
+            "properties": { "tags": ["J2"] } }
+        ]
+      } },
+      "results": [
+        { "ruleId": "C5", "level": "error",
+          "message": { "text": "always-true check (expect(true).toBe(true), assert(1)) (both sides are the same literal)" },
+          "properties": { "tags": ["J2", "risk:effectiveness", "level:high"] },
+          "locations": [ { "physicalLocation": {
+            "artifactLocation": { "uri": "sum.test.ts" },
+            "region": { "startLine": 5 } } } ] }
+      ]
+    }
+  ]
+}
+```
+
+**junit** (`--format junit`): JUnit XML. HIGH becomes a `<failure>`, lower findings become `<skipped>`.
+
+```xml
+<?xml version="1.0" encoding="utf-8"?>
+<testsuites name="falsegreen-js" tests="2" failures="1" skipped="1" errors="0">
+  <testsuite name="falsegreen-js" tests="2" failures="1" skipped="1" errors="0">
+    <testcase classname="falsegreen-js.C5" name="C5 sum.test.ts:5">
+      <failure message="always-true check (expect(true).toBe(true), assert(1)) (both sides are the same literal)">sum.test.ts:5</failure>
+    </testcase>
+    <testcase classname="falsegreen-js.C6" name="C6 sum.test.ts:9">
+      <skipped message="weak check ..."></skipped>
+    </testcase>
+  </testsuite>
+</testsuites>
+```
+
+These formats match the [Python sibling](https://github.com/vinicq/falsegreen) concept-for-concept, so a pipeline can swap one scanner for the other.
+
+### Configuration
+
+**Exit codes** (the contract CI relies on):
+
+| Code | Meaning |
+|---|---|
+| `0` | clean, or only off/baselined findings |
+| `10` | low-confidence findings only |
+| `20` | at least one high-confidence finding |
+
+Block the build on `20`. `10` is a warn band you can choose to fail or not.
+
+**Disable codes:** `--disable C7,JS3` turns codes off for this run. Persist it with `"disable": [...]` in config.
+
+**Enable codes:** `--enable D8,M2` re-activates listed off or opt-in codes at their catalog severity. It flips a default-off code on but cannot raise a code above catalog. A code passed to both `--enable` and `--disable` stays off, `--disable` wins.
+
+**Diagnostics:** `--diagnostics` reports the opt-in maintainability group (`D1`, `D3`, `D4`, `D6`, `D7`, `D8`, `M2`) as warnings. These are not false-green, the test still protects, so they are off by default. Run on a test with two literal asserts:
+
+```
+diag.test.ts
+  HIGH C5   L2  always-true check (expect(true).toBe(true), assert(1))
+         both sides are the same literal
+         level: unit   fix: assert the real behaviour, not a constant or tautology
+  low  D8   L3  magic number in an assertion — a bare numeric literal instead of a named constant
+         magic number 2 in the assertion
+         level: unit   fix: name the magic number with a constant
+```
+
+**Inline suppression:** a comment on the offending line.
+
+```ts
+expect(user.id).toBe(user.id); // falsegreen: ignore[C7]   // silence only C7
+expect(x);                     // falsegreen: ignore        // silence every code on this line
+```
+
+**Severity and confidence filtering:** there is no `--severity` flag. You tune severity per code in config; values are `high`, `low`, `off` (and the diagnostics live behind `--diagnostics` or per-code config).
+
+**Config file:** `falsegreen.json`, `.falsegreenrc.json`, or a `"falsegreen"` key in `package.json`.
+
+```json
+{
+  "disable": ["C8"],
+  "exclude": ["**/legacy/**"],
+  "severity": { "JS3": "off", "C16": "high" }
+}
+```
+
+Precedence: CLI `--disable` > CLI `--enable` > config `disable`/`severity` > catalog default.
+
+**`--config-audit`** is a separate mode: instead of scanning test files it reads the Jest/Vitest config (`package.json` `jest` field, `jest.config.*`, `vitest.config.*`) and reports the project-layer ways a suite stays green by configuration. Run on a `package.json` with `passWithNoTests: true` and `bail: 1`:
+
+```
+package.json
+  low  PL7  L1  no coverage gate (coverageThreshold / coverage.thresholds) ...
+  low  PL8  L1  bail stops the run early (bail) ...
+  low  PL10 L1  passWithNoTests lets an empty or fully-filtered suite report green
+```
+
+The PL codes: `PL7` (no `coverageThreshold` / `coverage.thresholds`), `PL8` (`bail` stops the run early), `PL10` (`passWithNoTests` passes an empty or filtered-to-nothing run). The per-file scan cannot see config.
+
+**`--baseline` / `--write-baseline`** ratchet the scanner onto a large codebase without fixing every legacy finding at once. Put the paths first and the flag last, since the flag's optional value would otherwise eat the next argument:
+
+```bash
+npx falsegreen-js . --write-baseline   # record current findings to .falsegreen-baseline.json, exit 0
+npx falsegreen-js . --baseline         # report and fail only on net-new findings
+```
+
+Captured:
+
+```
+falsegreen-js: wrote 1 fingerprint(s) to .falsegreen-baseline.json
+```
+
+A finding's identity is a content fingerprint (`sha1` of relative path + code + detail, no line number), so it survives unrelated line shifts. Both flags default to `.falsegreen-baseline.json`; pass an explicit path to override. Commit the baseline so CI sees the same set.
+
+### CI integration
+
+**GitHub Actions** (text gate plus SARIF upload to code scanning):
+
+```yaml
+name: falsegreen-js
+on: [push, pull_request]
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write      # required for the SARIF upload
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: "20" }
+      - name: Scan and emit SARIF
+        run: npx falsegreen-js . --format sarif --output falsegreen.sarif
+        continue-on-error: true   # let the upload run even when exit 20
+      - uses: github/codeql-action/upload-sarif@v3
+        with: { sarif_file: falsegreen.sarif }
+      - name: Fail on high-confidence findings
+        run: npx falsegreen-js .  # exit 20 fails the job
+```
+
+**Pre-commit hook** (the repo ships a `.pre-commit-hooks.yaml`):
+
+```yaml
+  - repo: https://github.com/vinicq/falsegreen-js
+    rev: v0.6.3          # pin a tag; run `pre-commit autoupdate` to move it
+    hooks:
+      - id: falsegreen-js
+```
+
+Then `pre-commit install`. The hook entry is `falsegreen-js --staged` with `pass_filenames: false` (the `node` language runs it through the installed package), so it reads the staged test files itself; do not add file arguments. HIGH findings block the commit.
+
+### Scope: what it does NOT do
+
+It is a static AST scanner: it never runs your tests. It does not decide whether an expected value contradicts intended behaviour, nor whether a test re-implements the production logic. Those are semantic and belong to the [falsegreen-skill](https://github.com/vinicq/falsegreen-skill) LLM pass. For the layer no static scan reaches (does a green test fail when the code is wrong?), run a mutation tester like [Stryker](https://stryker-mutator.io/). Precision over recall: a softened heuristic that misses a case is preferred to one that flags correct code. The full catalog is in the [Case catalog](#case-catalog) below and the [online docs](https://vinicq.github.io/falsegreen-docs/).
+
 ## Why
 
 A test can be green and still protect nothing: an empty body, an assertion that is

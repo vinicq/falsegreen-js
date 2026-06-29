@@ -6,6 +6,14 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+## [0.6.3] - 2026-06-29
+
+### Added
+- Complete "Usage and configuration reference" in the README (install channels, every output format with real samples, configuration, exit codes, CI + pre-commit).
+
+### Fixed
+- README pre-commit `rev` pins updated to the current release.
+
 ## [0.6.2] - 2026-06-29
 
 ### Fixed

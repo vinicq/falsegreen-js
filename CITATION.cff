@@ -4,7 +4,7 @@ title: "falsegreen-js: find JS/TS tests that pass green without protecting anyth
 authors:
   - family-names: Queiroz
     given-names: Vinicius
-version: 0.6.2
+version: 0.6.3
 date-released: "2026-06-27"
 license: MIT
 repository-code: "https://github.com/vinicq/falsegreen-js"
