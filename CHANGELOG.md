@@ -6,7 +6,34 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+## [0.6.1] - 2026-06-29
+
+### Fixed
+- Field validation (#82) tightened six codes shipped in 0.6.0 that over-fired on
+  real-world tests:
+  - `JS30` no longer flags the `expect(true).toBe(false)` force-fail shape inside a
+    `try` whose `catch` asserts on the error (the "should not reach here" idiom), an
+    inner literal-vs-literal expect that is the subject of an enclosing matcher
+    (`expect(() => expect(1).toBe(2)).toThrow()`), or a literal-vs-literal expect in
+    a skipped block or dead code (JS4 and C20 already own those).
+  - `JS31` no longer fires when the enclosing test has an unconditional assertion
+    outside the `try`, so an incidental-IO `try/catch` (a `fs.writeFileSync` or page
+    setup) next to a real oracle stays clean.
+  - `JS25` now recognises an iterator receiver bound to a non-empty array literal
+    (`const cases = [1, 2, 3]; cases.forEach(...)`), not only an inline literal, so a
+    loop that provably runs is no longer flagged.
+  - `JS27` treats `toHaveBeenCalledWith`/`toHaveBeenLastCalledWith`/
+    `toHaveBeenNthCalledWith`/`toBeCalledWith` carrying a non-empty argument list as a
+    behavioral oracle, not a weak call-counter. The arg-less `toHaveBeenCalled`/
+    `toHaveBeenCalledTimes` family (and an arg-less `*With`) stays weak.
+  - `C16` no longer reports a fixed `setTimeout(_, <literal>)` delay: a constant delay
+    is deterministic, and the unflushed-callback concern is owned by JS7 and JS26.
+  - `C21` treats a literal-bounded `for` loop (`for (let i = 0; i < 3; i++)`) and a
+    `for...of` over a non-empty array literal as unconditional, since the body
+    provably runs at least once.
+
 ## [0.6.0] - 2026-06-29
+
 
 ### Added
 - `JS25` (high, J1): the only assertion sits inside an array-iterator callback
