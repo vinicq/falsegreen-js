@@ -137,7 +137,9 @@ line up in the research. `JS*` codes are ecosystem-specific.
 | C20 | high | assertion in unreachable code (after a `return`/`throw`/`process.exit`, a `break`, a both-arms-terminating `if`, or an exhaustive `switch`) — it never runs |
 | C23 | low  | reads a real file at a literal path, or a hard-coded URL (mystery guest) |
 | C8  | low  | exact equality on a float (use `toBeCloseTo`) |
+| C8b | low  | `toBeCloseTo` with no precision argument — the default 2-digit tolerance may be too loose |
 | C9  | low  | `toThrow()` with no error type or message — accepts any error |
+| C11a | low | self-confirming literal — the expected value is bound from the same call under test (`const e = foo(); expect(foo()).toBe(e)`) |
 | C16 | low  | result depends on `Date.now`, `Math.random`, or a fixed timer |
 | C18 | low  | compares `String(x)` / `JSON.stringify(x)` / `` `${x}` `` to a literal (formatting, not value) |
 | C21 | low  | every assertion is conditional — none runs unconditionally |
@@ -162,6 +164,12 @@ line up in the research. `JS*` codes are ecosystem-specific.
 | JS22 | high | empty `it.each`/`test.each` table — generated with zero cases, never runs |
 | JS23 | high | `expect.assertions(N)` with fewer unconditional `expect()` calls than N — the guard can never be met |
 | JS24 | low  | Cypress query (`cy.get`/`cy.find`/`cy.contains`) as a loose statement with no terminating `.should`/`.and` and no `expect` in `.then` — its result is never asserted |
+| JS25 | high | the only assertion sits inside an array-iterator callback (`forEach`/`map`/`filter`/`some`/`every`/`flatMap`) — runs zero times on an empty collection |
+| JS26 | low  | fake timers installed but never advanced (`runAllTimers`/`advanceTimersByTime`/`tick`) — the scheduled callback never fires, so the assertion reads un-mutated state |
+| JS27 | low  | `toHaveBeenCalled*` is the sole oracle on a locally-created double — verifies wiring, not behaviour |
+| JS29 | low  | `expect(...).resolves`/`.rejects` chain is a bare statement, not awaited or returned — the test finishes green before the matcher settles |
+| JS30 | high | literal-vs-literal assertion (`expect(2).toBe(3)`, chai `expect(x).to.equal(y)`) — both operands are fixed at parse time |
+| JS31 | low  | `try/catch` swallows a possible throw with no assertion on the exception — a unit that stops throwing still passes green |
 
 Each code carries a judgment tag (J1-J6) shared with the
 [falsegreen-skill](https://github.com/vinicq/falsegreen-skill) semantic framework.

@@ -24,14 +24,15 @@ function scanExample(name: string): Set<string> {
 // case that stays quiet does not weaken the check.
 const EXPECTED: Record<string, string[]> = {
   "effectiveness.test.ts": [
-    "C2", "C2b", "C5", "C6", "C7", "C8", "C9", "C18", "C37", "C44", "JS3", "JS13", "JS15",
+    "C2", "C2b", "C5", "C6", "C7", "C8", "C8b", "C9", "C11a", "C18", "C37", "C44",
+    "JS3", "JS13", "JS15", "JS30",
   ],
   "execution.test.ts": [
     "C20", "C21", "CC", "C48", "JS1", "JS2", "JS4", "JS5", "JS6", "JS7", "JS8",
-    "JS9", "JS11", "JS17", "JS18", "JS21", "JS22", "JS23",
+    "JS9", "JS11", "JS17", "JS18", "JS21", "JS22", "JS23", "JS25", "JS26", "JS29", "JS31",
   ],
   "nondeterminism.test.ts": ["C16"],
-  "dependency.test.ts": ["C23"],
+  "dependency.test.ts": ["C23", "JS27"],
   "cypress.cy.ts": ["JS24"],
   "diagnostics.test.ts": ["D1", "D3", "D4", "D6", "D7", "D8"],
 };
