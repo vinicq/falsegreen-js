@@ -2,7 +2,7 @@
 // runs, or the test vanishes from the count).
 //
 // Codes: C20, C21, CC, C48, JS1, JS2, JS4, JS5, JS6, JS7, JS8, JS9, JS11,
-//        JS17, JS18, JS21, JS22, JS23
+//        JS17, JS18, JS21, JS22, JS23, JS25, JS26, JS29, JS31
 //
 // BAD tests are flagged; CLEAN look-alikes stay quiet. The scanner reads the
 // syntax tree only; it never runs this file (see vitest.config.ts).
@@ -160,3 +160,35 @@ test("js23 too few", async () => { expect.assertions(2); expect(a).toBe(b); });
 
 // CLEAN: the count matches the unconditional expect calls.
 test("js23 count matches clean", async () => { expect.assertions(2); expect(a).toBe(c); expect(b).toBe(d); });
+
+// --- JS25: assertion only inside an array-iterator callback ------------------
+
+// BAD: on an empty collection the callback never runs and nothing is checked.
+test("js25 forEach only", () => { items.forEach((i) => expect(i).toBe(1)); });
+
+// CLEAN: an own-scope assertion runs even when the collection is empty.
+test("js25 own assert clean", () => { expect(items.length).toBe(2); items.forEach((i) => expect(i).toBe(1)); });
+
+// --- JS26: fake timers installed but never advanced --------------------------
+
+// BAD: the scheduled callback never fires, so the assertion reads initial state.
+test("js26 never advanced", () => { vi.useFakeTimers(); let v = 0; setTimeout(() => { v = 1; }, 100); expect(v).toBe(0); });
+
+// CLEAN: advancing the timers fires the callback before the assertion.
+test("js26 advanced clean", () => { vi.useFakeTimers(); let v = 0; setTimeout(() => { v = 1; }, 100); vi.runAllTimers(); expect(v).toBe(1); });
+
+// --- JS29: resolves/rejects not awaited or returned --------------------------
+
+// BAD: a bare resolves chain settles after the test reports green.
+test("js29 floating resolves", () => { expect(p).resolves.toBe(1); });
+
+// CLEAN: awaiting the chain makes the matcher settle inside the test.
+test("js29 awaited clean", async () => { await expect(p).resolves.toBe(1); });
+
+// --- JS31: try/catch swallows a SUT throw ------------------------------------
+
+// BAD: a unit that stops throwing still passes; the catch checks nothing.
+test("js31 swallowed throw", () => { try { callUnit(); } catch (e) {} });
+
+// CLEAN: the catch asserts on the caught exception.
+test("js31 asserts on error clean", () => { try { callUnit(); } catch (e) { expect(e).toBeInstanceOf(Error); } });

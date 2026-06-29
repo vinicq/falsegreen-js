@@ -1,7 +1,7 @@
 // falsegreen-js examples - RiskGroup: dependency (real I/O, or a stand-in for
 // the unit under test: a mystery guest).
 //
-// Code: C23
+// Codes: C23, JS27
 //
 // The scanner reads the syntax tree only; it never runs this file.
 
@@ -20,3 +20,11 @@ test("c23 real file path", () => { const d = readFileSync("/var/data/fixture.jso
 
 // CLEAN: parse an in-memory literal instead of reading the disk.
 test("c23 in memory clean", () => { expect(parse('{"id":1}')).toEqual({ id: 1 }); });
+
+// --- JS27: toHaveBeenCalled* as the sole oracle ------------------------------
+
+// BAD: the only check is that the local double was called, not the unit output.
+test("js27 sole call oracle", () => { const fn = jest.fn(); run(fn); expect(fn).toHaveBeenCalled(); });
+
+// CLEAN: assert the unit's output as well as the call.
+test("js27 also output clean", () => { const fn = jest.fn(); const r = run(fn); expect(fn).toHaveBeenCalled(); expect(r).toBe(2); });

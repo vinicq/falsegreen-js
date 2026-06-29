@@ -7,6 +7,7 @@ import {
 } from "./oracles.js";
 import { lineOf } from "./parse.js";
 import { assertionsInDeadCode, hasUnconditionalAssertion } from "./cfg.js";
+import { detectPyramidLevel } from "./level.js";
 
 // --- test framework vocabulary (runner-agnostic) ---------------------------
 // it/test/specify (Jest, Vitest, Mocha, Jasmine, AVA, node:test, Cypress,
@@ -18,6 +19,26 @@ import { assertionsInDeadCode, hasUnconditionalAssertion } from "./cfg.js";
 const TEST_BLOCK_ROOTS = new Set(["it", "test", "specify"]);
 const SUITE_ROOTS = new Set(["describe", "context", "suite", "fdescribe", "xdescribe", "fcontext", "xcontext"]);
 const FOCUS_NAMES = new Set(["fit", "fdescribe", "fcontext"]);
+
+// Array-iterator methods whose callback runs once per element — zero times on an
+// empty collection. An assertion that lives ONLY inside one of these callbacks
+// (JS25) runs zero times when the receiver is empty: green with nothing checked.
+const ARRAY_ITERATOR_METHODS = new Set(["forEach", "map", "filter", "some", "every", "flatMap"]);
+
+// Equality matchers across runners for the literal-vs-literal (JS30) and
+// self-confirming-literal (C11a) lanes: Jest/Vitest toBe family + toBeCloseTo,
+// plus chai/AVA equal/equals/eql/is. Broader than EQUALITY_MATCHERS (which gates
+// the Jest-only C5/C7/C8 lanes) on purpose.
+const EQ_MATCHERS_ANY = new Set([
+  "toBe", "toEqual", "toStrictEqual", "toBeCloseTo", "equal", "equals", "eql", "is",
+]);
+
+// toHaveBeenCalled* family (JS27): matchers that only assert a double was invoked.
+const CALL_TRACKING_MATCHERS = new Set([
+  "toHaveBeenCalled", "toHaveBeenCalledTimes", "toHaveBeenCalledWith",
+  "toHaveBeenLastCalledWith", "toHaveBeenNthCalledWith", "toBeCalled",
+  "toBeCalledTimes", "toBeCalledWith", "toHaveBeenCalledOnce",
+]);
 const SKIP_NAMES = new Set(["xit", "xdescribe", "xcontext", "xspecify"]);
 
 // --- C48 dark-patch: a test that flips a known test-mode flag then asserts ---
@@ -197,6 +218,22 @@ function expectChain(call: ts.CallExpression): ExpectChain | null {
   return null;
 }
 
+/** True if `call` is the terminal matcher call of an `expect(...).resolves`/
+ *  `.rejects` chain (e.g. `expect(p).resolves.toBe(1)`). Walks the callee base for a
+ *  `.resolves`/`.rejects` property access that bottoms out in an `expect(...)` call.
+ *  Only the explicit resolves/rejects marker counts (JS29); a plain promise does not. */
+function expectIsResolvesRejects(call: ts.CallExpression): boolean {
+  if (!ts.isPropertyAccessExpression(call.expression)) return false;
+  let base: ts.Expression = call.expression.expression;
+  let sawSettle = false;
+  while (ts.isPropertyAccessExpression(base) || ts.isCallExpression(base)) {
+    if (ts.isPropertyAccessExpression(base) &&
+        (base.name.text === "resolves" || base.name.text === "rejects")) sawSettle = true;
+    base = base.expression;
+  }
+  return sawSettle && expectRooted(call.expression);
+}
+
 /** True if a call's result is observed: awaited, returned, assigned, the
  *  implicit-return body of an arrow, or explicitly discarded with `void` (an
  *  author signalling "I am dropping this on purpose"). A bare floating call (its
@@ -339,6 +376,20 @@ function isHarmlessCatch(block: ts.Block): boolean {
   return true;
 }
 
+/** Stricter than isHarmlessCatch, for JS31: the catch truly swallows the throw,
+ *  doing NOTHING with it. Only an empty body or `console.*` log-only statements
+ *  qualify. An assignment (recovery flag like `supported = false`), a return, a
+ *  fail()/throw, an assertion, or any other call is meaningful handling, not a
+ *  silent swallow, so JS31 must not fire. Keeps JS31 precision-first. */
+function catchSilentlySwallows(block: ts.Block): boolean {
+  for (const stmt of block.statements) {
+    if (!ts.isExpressionStatement(stmt)) return false; // return/var/if/etc: handling
+    if (!ts.isCallExpression(stmt.expression)) return false; // a bare assignment/expr
+    if (!calleeName(stmt.expression.expression).startsWith("console.")) return false;
+  }
+  return true;
+}
+
 /** Matcher names of every expect-chain assertion under scope (for snapshot-only). */
 function matchersUnder(scope: ts.Node): string[] {
   const out: string[] = [];
@@ -469,6 +520,162 @@ function expectSubjectRoots(scope: ts.Node): Set<string> {
   };
   walk(scope);
   return out;
+}
+
+/** JS25: every assertion under `scope` sits inside an array-iterator callback
+ *  (arr.forEach/map/filter/some/every/flatMap(cb)), and at least one such
+ *  assertion exists. Walk the body; when entering an iterator callback, any
+ *  assertion inside counts as "iterator-bound"; an assertion reached outside one
+ *  is an own-scope assertion that disproves JS25. Returns whether the only
+ *  assertions are iterator-bound (and there is at least one). FP-averse: a single
+ *  own-scope assertion anywhere suppresses it. */
+function assertionsOnlyInArrayIterator(scope: ts.Node): boolean {
+  let iteratorBound = 0;
+  let ownScope = 0;
+  // The callback nodes of array-iterator calls under scope, so the walk knows when
+  // an assertion is inside one without re-deriving the call shape per node.
+  const iterCallbacks = new Set<ts.Node>();
+  const collect = (n: ts.Node): void => {
+    if (ts.isCallExpression(n) && ts.isPropertyAccessExpression(n.expression) &&
+        ARRAY_ITERATOR_METHODS.has(n.expression.name.text)) {
+      for (const a of n.arguments) {
+        if (ts.isArrowFunction(a) || ts.isFunctionExpression(a)) iterCallbacks.add(a);
+      }
+    }
+    ts.forEachChild(n, collect);
+  };
+  collect(scope);
+
+  const walk = (n: ts.Node, insideIter: boolean): void => {
+    const nowInside = insideIter || iterCallbacks.has(n);
+    if (isAssertionNode(n)) {
+      if (nowInside) iteratorBound++; else ownScope++;
+    }
+    ts.forEachChild(n, (c) => walk(c, nowInside));
+  };
+  ts.forEachChild(scope, (c) => walk(c, false));
+  return ownScope === 0 && iteratorBound > 0;
+}
+
+/** True if `scope` carries an expect.assertions(N) / expect.hasAssertions() guard
+ *  (JS23 territory) — used as a JS25 FP guard: the author already declared a count. */
+function hasAssertionCountGuard(scope: ts.Node): boolean {
+  let found = false;
+  const walk = (n: ts.Node): void => {
+    if (found) return;
+    if (ts.isCallExpression(n)) {
+      const nm = calleeName(n.expression);
+      if (nm === "expect.assertions" || nm === "expect.hasAssertions") { found = true; return; }
+    }
+    ts.forEachChild(n, walk);
+  };
+  walk(scope);
+  return found;
+}
+
+/** True if any array-iterator call under `scope` iterates a non-empty array
+ *  literal receiver (arr `[1, 2].forEach(...)`) — JS25 FP guard: a non-empty
+ *  literal always runs the callback at least once, so the assertion does run. */
+function iteratesNonEmptyArrayLiteral(scope: ts.Node): boolean {
+  let found = false;
+  const walk = (n: ts.Node): void => {
+    if (found) return;
+    if (ts.isCallExpression(n) && ts.isPropertyAccessExpression(n.expression) &&
+        ARRAY_ITERATOR_METHODS.has(n.expression.name.text)) {
+      const recv = n.expression.expression;
+      if (ts.isArrayLiteralExpression(recv) && recv.elements.length > 0) { found = true; return; }
+    }
+    ts.forEachChild(n, walk);
+  };
+  walk(scope);
+  return found;
+}
+
+/** JS27: the matcher names of every expect-chain assertion under `scope`, each
+ *  paired with the root identifier of its subject. Used to decide whether the ONLY
+ *  oracle is a toHaveBeenCalled* check on a locally-created double. */
+function expectMatcherSubjects(scope: ts.Node): { matcher: string; root: string | null }[] {
+  const out: { matcher: string; root: string | null }[] = [];
+  const walk = (n: ts.Node): void => {
+    if (ts.isCallExpression(n)) {
+      const chain = expectChain(n);
+      if (chain) out.push({ matcher: chain.matcher, root: chain.subject ? rootIdent(chain.subject) : null });
+    }
+    ts.forEachChild(n, walk);
+  };
+  walk(scope);
+  return out;
+}
+
+/** Root identifiers in `scope` bound to a freshly-created test double:
+ *  jest.fn()/vi.fn()/jest.spyOn()/vi.spyOn() in a const/let, or a mockReturnValue/
+ *  mockImplementation-decorated handle. Used by JS27 to confirm the call-tracking
+ *  subject is a local double, not a real collaborator. */
+function localDoubleRoots(scope: ts.Node): Set<string> {
+  const out = new Set<string>();
+  const isDoubleInit = (e: ts.Expression): boolean => {
+    let cur: ts.Expression = e;
+    while (ts.isCallExpression(cur) || ts.isPropertyAccessExpression(cur)) {
+      if (ts.isCallExpression(cur)) {
+        const nm = calleeName(cur.expression);
+        if (nm === "jest.fn" || nm === "vi.fn" || nm === "jest.spyOn" || nm === "vi.spyOn" ||
+            nm === "sinon.spy" || nm === "sinon.stub") return true;
+      }
+      cur = ts.isCallExpression(cur) ? cur.expression : cur.expression;
+    }
+    return false;
+  };
+  const walk = (n: ts.Node): void => {
+    if (ts.isVariableDeclaration(n) && n.initializer && ts.isIdentifier(n.name) &&
+        isDoubleInit(n.initializer)) {
+      out.add(n.name.text);
+    }
+    ts.forEachChild(n, walk);
+  };
+  walk(scope);
+  return out;
+}
+
+/** JS26: a fake-timer install and a setTimeout/setInterval arm both live under
+ *  `scope`, but no flush/advance does (in scope or a sibling lifecycle hook). The
+ *  scheduled callback never fires, so any assertion runs against un-mutated state. */
+function timerInstalledNeverAdvanced(scope: ts.Node, timer: ts.CallExpression, sf: ts.SourceFile): boolean {
+  // install present in scope, no flush in scope — order does not matter (a frozen
+  // timer that is never advanced is vacuous regardless of where the install sits).
+  if (!callMatchesUnder(scope, sf, FAKE_TIMER_INSTALL)) return false;
+  if (callMatchesUnder(scope, sf, FAKE_TIMER_FLUSH)) return false;
+  // a sibling hook may install or flush; reuse the JS-wide hook scan. If a hook
+  // flushes, the callback fires, so suppress.
+  if (hookControlsTimerFlush(timer, sf)) return false;
+  return true;
+}
+
+/** True if an enclosing describe/top-level afterEach/afterAll flushes timers — the
+ *  JS26 suppression twin of hookControlsTimer (which also accepts a before-install).
+ *  Here only a teardown flush matters: an install in a hook does not advance. */
+function hookControlsTimerFlush(timer: ts.CallExpression, sf: ts.SourceFile): boolean {
+  const scan = (statements: readonly ts.Statement[]): boolean => {
+    for (const stmt of statements) {
+      if (!ts.isExpressionStatement(stmt) || !ts.isCallExpression(stmt.expression)) continue;
+      const hook = calleeName(stmt.expression.expression).split(".")[0];
+      const cb = getTestCallback(stmt.expression);
+      if (!cb) continue;
+      if (callMatchesUnder(cb, sf, FAKE_TIMER_FLUSH) &&
+          (SETUP_HOOKS.has(hook) || TEARDOWN_HOOKS.has(hook))) return true;
+    }
+    return false;
+  };
+  if (scan(sf.statements)) return true;
+  let pn: ts.Node | undefined = timer.parent;
+  while (pn) {
+    if ((ts.isArrowFunction(pn) || ts.isFunctionExpression(pn) || ts.isFunctionDeclaration(pn)) &&
+        pn.parent && ts.isCallExpression(pn.parent) && pn.parent.arguments.includes(pn as ts.Expression)) {
+      const suiteRoot = calleeName(pn.parent.expression).split(".")[0];
+      if (SUITE_ROOTS.has(suiteRoot) && pn.body && ts.isBlock(pn.body) && scan(pn.body.statements)) return true;
+    }
+    pn = pn.parent;
+  }
+  return false;
 }
 
 function getTestCallback(call: ts.CallExpression): ts.FunctionLikeDeclaration | null {
@@ -615,6 +822,7 @@ export function analyze(sf: ts.SourceFile): Finding[] {
   const findings: Finding[] = [];
   const file = sf.fileName;
   const text = sf.getFullText();
+  const level = detectPyramidLevel(sf);
   // Fake-timer / flush presence suppresses the JS7 timer arm: if the test fakes
   // or drives timers anywhere, a setTimeout/setInterval callback is flushed
   // synchronously and its assertion does run. Covers Jest, Vitest and Sinon
@@ -774,6 +982,67 @@ export function analyze(sf: ts.SourceFile): Finding[] {
             }
           }
 
+          // JS25: every assertion lives inside an array-iterator callback
+          // (forEach/map/filter/some/every/flatMap) and none on the test's own
+          // spine — so on an empty collection the callback never runs and zero
+          // assertions execute. The verified hole between C2/C2b (hasAssertion
+          // descends into callbacks, so it finds one) and C21 (its ownAsserts stop
+          // at callbacks, so it sees none). FP guards: any own-scope assertion, a
+          // non-empty array-literal receiver, or an expect.assertions/hasAssertions
+          // guard suppress it.
+          if (hasAssertion(cb) && assertionsOnlyInArrayIterator(cb.body) &&
+              !iteratesNonEmptyArrayLiteral(cb.body) && !hasAssertionCountGuard(cb.body)) {
+            push(line, "JS25", "the only assertion is inside an array-iterator callback; it runs zero times on an empty collection");
+          }
+
+          // JS27: every expect-chain matcher is in the toHaveBeenCalled* family AND
+          // each such subject root is a locally-created double (jest.fn/vi.fn/spyOn).
+          // The test confirms it called the double it set up, never the unit's output
+          // or state (J3). FP guards: any non-call-tracking assertion suppresses it,
+          // and it is gated to the unit level (a logger-spy call check is legit at
+          // integration/e2e). Sibling of JS8.
+          if (level === "unit") {
+            const ms27 = expectMatcherSubjects(cb.body);
+            if (ms27.length > 0 && ms27.every((m) => CALL_TRACKING_MATCHERS.has(m.matcher))) {
+              const doubles = localDoubleRoots(cb.body);
+              if (ms27.every((m) => m.root !== null && doubles.has(m.root))) {
+                push(line, "JS27", "the only oracle is a toHaveBeenCalled* check on a local double; assert the unit's output or state");
+              }
+            }
+          }
+
+          // C11a: self-confirming literal — the expected value is bound from the
+          // same call/expression under test. `const e = foo(); expect(foo()).toBe(e)`
+          // can never fail: both sides evaluate the SUT, so the oracle confirms the
+          // code against itself (J2). Static, low-FP corner of the circular-oracle
+          // family. FP guard: the bound initializer must be provably the SUT call,
+          // i.e. its source text equals the expect subject's source text exactly, and
+          // it contains a call (a plain literal binding is not self-confirming).
+          {
+            const inits = new Map<string, string>(); // var name -> initializer text
+            forEachNoNesting(cb.body, (n) => {
+              if (ts.isVariableDeclaration(n) && ts.isIdentifier(n.name) && n.initializer &&
+                  containsCall(n.initializer)) {
+                inits.set(n.name.text, n.initializer.getText(sf).replace(/\s+/g, " ").trim());
+              }
+            });
+            if (inits.size > 0) {
+              forEachNoNesting(cb.body, (n) => {
+                if (!ts.isCallExpression(n)) return;
+                const ch = expectChain(n);
+                if (!ch || ch.negated || !ch.subject) return;
+                if (!EQ_MATCHERS_ANY.has(ch.matcher)) return;
+                const a0 = ch.args[0];
+                if (!a0 || !ts.isIdentifier(a0)) return;
+                const initText = inits.get(a0.text);
+                if (initText && containsCall(ch.subject) &&
+                    ch.subject.getText(sf).replace(/\s+/g, " ").trim() === initText) {
+                  push(lineOf(sf, n), "C11a", "expected value is bound from the same call under test");
+                }
+              });
+            }
+          }
+
           // D7: anonymous test (empty or missing description)
           const desc = node.arguments[0];
           const emptyStr = (d?: ts.Expression) => d !== undefined &&
@@ -917,8 +1186,9 @@ export function analyze(sf: ts.SourceFile): Finding[] {
         ) {
           // C7 self-compare
           push(lineOf(sf, node), "C7", "expected value is the same expression as the subject");
-        } else if (EQUALITY_MATCHERS.has(chain.matcher) && arg && ts.isNumericLiteral(arg)) {
-          // C8 exact float
+        } else if (EQUALITY_MATCHERS.has(chain.matcher) && arg && ts.isNumericLiteral(arg) && !isLiteral(subj)) {
+          // C8 exact float — on a real (non-literal) subject. A literal-vs-literal
+          // float (expect(0.1).toBe(0.3)) is JS30, the stronger both-literals lane.
           const v = Number(arg.text);
           if (!Number.isInteger(v) && v !== 0 && v !== 1) {
             push(lineOf(sf, node), "C8", "exact equality on a float; use toBeCloseTo");
@@ -926,6 +1196,27 @@ export function analyze(sf: ts.SourceFile): Finding[] {
         } else if (EQUALITY_MATCHERS.has(chain.matcher) && isStringify(subj) && arg && ts.isStringLiteral(arg)) {
           // C18 sensitive equality: compares the stringified form to a literal
           push(lineOf(sf, node), "C18", "compares the stringified form of a value to a literal");
+        }
+
+        // JS30: literal-vs-literal through an equality matcher — both operands are
+        // fixed at parse time, so the comparison is independent of any production
+        // code. Different-token only (the same-token case is C5's "both sides are
+        // the same literal"); object/array literals (reference-equality, false-red)
+        // and template literals with substitutions (C18 lane) are excluded by
+        // isLiteral. Broader matcher set than C5/C7 (adds toBeCloseTo + chai/AVA
+        // equal/equals/eql/is). Negation already filtered (chain.negated).
+        if (EQ_MATCHERS_ANY.has(chain.matcher) && isLiteral(subj) && isLiteral(arg) &&
+            subj!.getText(sf) !== arg!.getText(sf)) {
+          push(lineOf(sf, node), "JS30", "both operands are literals; the comparison is fixed at parse time");
+        }
+
+        // C8b: toBeCloseTo called with no precision argument — only the expected
+        // value, so the default 2-digit tolerance applies. The js analogue of
+        // assertAlmostEqual/pytest.approx with no tolerance: implicit-precision only.
+        // A literal-vs-literal toBeCloseTo is JS30's stronger lane, so skip it here.
+        if (chain.matcher === "toBeCloseTo" && chain.args.length === 1 &&
+            !(isLiteral(subj) && isLiteral(arg))) {
+          push(lineOf(sf, node), "C8b", "toBeCloseTo with no precision; the default 2-digit tolerance may be too loose");
         }
       }
 
@@ -991,7 +1282,34 @@ export function analyze(sf: ts.SourceFile): Finding[] {
                 `assertion deferred into a floating .${leaf}(); may not run before the test ends`);
             }
           }
+          // JS26: fake timers installed but never advanced. The setTimeout/setInterval
+          // is armed, fake timers freeze it, and nothing in the same test scope (nor a
+          // sibling before/after hook) calls runAllTimers/advanceTimersByTime/tick — so
+          // the scheduled callback never fires and any assertion runs against the
+          // un-mutated initial state. Opposite of C16 (uncontrolled timer): here the
+          // timer is controlled but not advanced. Requires an assertion in scope so a
+          // pure setup arm with no oracle is not flagged. Kept low (legit "assert
+          // nothing happened yet" exists). FP guard: any flush in the body or a
+          // before/afterEach of the enclosing describe suppresses it.
+          if (isTimer) {
+            const scope = enclosingTestScope(node);
+            if (timerInstalledNeverAdvanced(scope, node, sf) && hasAssertion(scope)) {
+              push(lineOf(sf, node), "JS26",
+                `${name} scheduled under fake timers that are never advanced; the callback never fires`);
+            }
+          }
         }
+      }
+
+      // JS29: an expect(...).resolves/.rejects chain that is a bare statement, not
+      // awaited, returned, or collected. The matcher only settles asynchronously, so
+      // a floating chain finishes green before it resolves. The statically-provable
+      // subset of JS20 (no type inference needed: the explicit .resolves/.rejects
+      // marker is the signal). FP guard: only the explicit resolves/rejects member
+      // (a plain promise stays JS20-out); awaited/returned/collected suppresses it.
+      if (expectIsResolvesRejects(node) && !isObservedAsync(node)) {
+        push(lineOf(sf, node), "JS29",
+          "resolves/rejects assertion is not awaited or returned; it settles after the test ends");
       }
 
       // JS13: a sync query used as a loose statement (result never asserted).
@@ -1070,6 +1388,19 @@ export function analyze(sf: ts.SourceFile): Finding[] {
     if (ts.isTryStatement(node) && node.catchClause) {
       if (containsAssertion(node.tryBlock) && isHarmlessCatch(node.catchClause.block)) {
         push(lineOf(sf, node), "JS11", "a failing assertion in try is swallowed by catch");
+      } else if (
+        // JS31: the try calls production code that may throw, the catch neither
+        // asserts on the exception, re-raises, nor calls fail() — so a unit that
+        // STOPS throwing (a real regression) still passes green. Complement of JS11
+        // (which owns the swallowed-assertion case): JS31 fires only when the try
+        // has a call but NO assertion (otherwise JS11), and the catch is harmless.
+        // FP guard: a catch that asserts on e / re-throws / calls fail() makes
+        // isHarmlessCatch false; a toThrow/assert.throws oracle in the try would be
+        // an assertion (so JS31 is skipped, the throw is covered).
+        containsCall(node.tryBlock) &&
+        catchSilentlySwallows(node.catchClause.block)
+      ) {
+        push(lineOf(sf, node), "JS31", "try/catch swallows a possible throw with no assertion on the exception");
       }
     }
 

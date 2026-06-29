@@ -1,7 +1,8 @@
 // falsegreen-js examples - RiskGroup: effectiveness (no oracle, a trivial
 // oracle, or the wrong oracle).
 //
-// Codes: C2, C2b, C5, C6, C7, C8, C9, C18, C37, C44, JS3, JS13, JS15
+// Codes: C2, C2b, C5, C6, C7, C8, C8b, C9, C11a, C18, C37, C44, JS3, JS13,
+//        JS15, JS30
 //
 // Each BAD test is one the scanner flags; each CLEAN look-alike is one token
 // away and stays quiet. The scanner reads the syntax tree, it never runs this
@@ -115,3 +116,27 @@ test("js15 boolean compare", () => { expect(a === b).toBe(true); });
 
 // CLEAN: compare the values directly so the failure message is useful.
 test("js15 direct compare clean", () => { expect(a).toBe(b); });
+
+// --- JS30: literal-vs-literal assertion --------------------------------------
+
+// BAD: both operands are literals, so the result is fixed at parse time.
+test("js30 literal vs literal", () => { expect(2).toBe(3); });
+
+// CLEAN: compare a real computed value to an independent expected one.
+test("js30 real value clean", () => { expect(compute()).toBe(3); });
+
+// --- C8b: toBeCloseTo with no precision argument -----------------------------
+
+// BAD: the default 2-digit tolerance may pass a value that is off by a lot.
+test("c8b implicit precision", () => { expect(total).toBeCloseTo(0.3); });
+
+// CLEAN: an explicit precision pins the tolerance.
+test("c8b explicit precision clean", () => { expect(total).toBeCloseTo(0.3, 5); });
+
+// --- C11a: self-confirming literal -------------------------------------------
+
+// BAD: the expected value is bound from the same call under test.
+test("c11a self confirming", () => { const expected = foo(); expect(foo()).toBe(expected); });
+
+// CLEAN: the expected value is an independent literal.
+test("c11a independent clean", () => { const expected = 42; expect(foo()).toBe(expected); });

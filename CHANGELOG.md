@@ -6,6 +6,56 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+### Added
+- `JS25` (high, J1): the only assertion sits inside an array-iterator callback
+  (`forEach`/`map`/`filter`/`some`/`every`/`flatMap`). On an empty collection the
+  callback runs zero times, so nothing is checked and the test still goes green.
+  Fills the verified gap between C2/C2b (whose `hasAssertion` descends into the
+  callback and finds the assertion) and C21 (whose own-scope scan stops at the
+  callback and sees none). FP guards: an own-scope assertion, a non-empty
+  array-literal receiver, or an `expect.assertions`/`hasAssertions` guard suppress it.
+- `JS30` (high, J2): literal-vs-literal assertion such as `expect(2).toBe(3)` or
+  chai `expect(x).to.equal(y)`, where both operands are literal nodes through an
+  equality matcher (`toBe`/`toEqual`/`toStrictEqual`/`toBeCloseTo`/`equal`/`equals`/
+  `eql`/`is`). The comparison is fixed at parse time, independent of any code. The
+  same-token case (`expect(1).toBe(1)`) stays with C5; object/array literals
+  (reference equality) and template literals with substitutions are excluded.
+- `JS31` (low, J1): a `try/catch` whose try calls code that may throw and whose
+  catch neither asserts on the exception, re-raises, nor calls `fail()`. A unit that
+  stops throwing (a real regression) still passes green. Complement of JS11, which
+  owns the swallowed-assertion case; JS31 fires only when the try has a call but no
+  assertion and the catch is harmless.
+- `JS27` (low, J3): `toHaveBeenCalled*` is the sole oracle on a locally-created
+  double (`jest.fn`/`vi.fn`/`spyOn`). The test confirms it called the double it set
+  up, not the unit's output or state. Gated to the unit level (a logger-spy call
+  check is legitimate at integration/e2e) and suppressed when any non-call-tracking
+  assertion is present. Sibling of JS8.
+- `JS26` (low, J1): fake timers installed but never advanced. A `setTimeout`/
+  `setInterval` is armed under frozen fake timers and nothing in the test scope (nor
+  a sibling `before`/`after` hook) calls `runAllTimers`/`advanceTimersByTime`/`tick`,
+  so the scheduled callback never fires and the assertion reads un-mutated state. The
+  opposite of C16 (uncontrolled timer). Requires an assertion in scope; a flush in
+  the body or an enclosing hook suppresses it.
+- `JS29` (low, J6): an `expect(...).resolves`/`.rejects` chain that is a bare
+  statement, not awaited or returned. The matcher settles asynchronously, so a
+  floating chain finishes green before it resolves. The statically-provable subset of
+  the skipped JS20, keyed on the explicit `.resolves`/`.rejects` marker so no type
+  inference is needed.
+- `C8b` (low, J4): `toBeCloseTo` called with no precision argument, so the default
+  2-digit tolerance applies. The js analogue of `assertAlmostEqual`/`pytest.approx`
+  with no tolerance, ported from `falsegreen`. Implicit-precision only; a
+  literal-vs-literal `toBeCloseTo` stays with JS30.
+- `C11a` (low, J2): self-confirming literal. The expected value is bound from the
+  same call under test (`const e = foo(); expect(foo()).toBe(e)`), so the oracle
+  confirms the code against itself. Ported from `falsegreen`; the bound initializer
+  must provably be the SUT call (its source text equals the expect subject's), so a
+  literal or a different-call binding stays clean.
+
+### Changed
+- `C8` (exact float) now fires only when the subject is a real (non-literal) value;
+  a literal-vs-literal float (`expect(0.1).toBe(0.3)`) is owned by the stronger JS30
+  lane, so the two no longer double-report.
+
 ## [0.5.0] - 2026-06-28
 
 ### Added

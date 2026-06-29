@@ -753,6 +753,118 @@ describe("falsegreen-js rules", () => {
     expect(codes(src)).not.toContain("JS8");
   });
 
+  // --- JS25 assertion only inside an array-iterator callback (#71) ------------
+  it("JS25: the only assertion is inside a forEach callback", () => {
+    expect(codes(`test("x", () => { items.forEach((i) => expect(i).toBe(1)); });`)).toContain("JS25");
+  });
+
+  it("JS25: also fires for map/some/every/flatMap callbacks", () => {
+    expect(codes(`test("x", () => { rows.map((r) => expect(r).toBeDefined()); });`)).toContain("JS25");
+  });
+
+  it("does not flag JS25 when an own-scope assertion runs unconditionally", () => {
+    expect(codes(`test("x", () => { expect(items.length).toBe(2); items.forEach((i) => expect(i).toBe(1)); });`)).not.toContain("JS25");
+  });
+
+  it("does not flag JS25 when the receiver is a non-empty array literal", () => {
+    expect(codes(`test("x", () => { [1, 2].forEach((i) => expect(i).toBeGreaterThan(0)); });`)).not.toContain("JS25");
+  });
+
+  it("does not flag JS25 when an expect.assertions guard is present", () => {
+    expect(codes(`test("x", () => { expect.assertions(2); items.forEach((i) => expect(i).toBe(1)); });`)).not.toContain("JS25");
+  });
+
+  // --- JS30 literal-vs-literal assertion (#72) --------------------------------
+  it("JS30: two different literals through an equality matcher", () => {
+    expect(codes(`test("x", () => { expect(2).toBe(3); });`)).toContain("JS30");
+  });
+
+  it("JS30: chai expect(lit).to.equal(lit)", () => {
+    expect(codes(`test("x", () => { expect("a").to.equal("b"); });`)).toContain("JS30");
+  });
+
+  it("does not flag JS30 when the subject is a real value (one token away)", () => {
+    expect(codes(`test("x", () => { expect(compute()).toBe(3); });`)).not.toContain("JS30");
+  });
+
+  it("does not flag JS30 for object literals (reference equality, false-red)", () => {
+    expect(codes(`test("x", () => { expect({ a: 1 }).toEqual({ a: 2 }); });`)).not.toContain("JS30");
+  });
+
+  // --- JS31 try/catch swallows a SUT throw (#73) ------------------------------
+  it("JS31: try calls code, empty catch swallows the throw", () => {
+    expect(codes(`test("x", () => { try { callUnit(); } catch (e) {} });`)).toContain("JS31");
+  });
+
+  it("does not flag JS31 when the catch asserts on the exception", () => {
+    expect(codes(`test("x", () => { try { callUnit(); } catch (e) { expect(e).toBeInstanceOf(Error); } });`)).not.toContain("JS31");
+  });
+
+  it("does not flag JS31 when the catch re-throws", () => {
+    expect(codes(`test("x", () => { try { callUnit(); } catch (e) { throw e; } });`)).not.toContain("JS31");
+  });
+
+  it("does not flag JS31 when the try has no call (nothing to swallow)", () => {
+    expect(codes(`test("x", () => { try { const x = 1; } catch (e) {} });`)).not.toContain("JS31");
+  });
+
+  // --- JS27 toHaveBeenCalled* as the sole oracle (#74) ------------------------
+  it("JS27: the only oracle is toHaveBeenCalled on a local double", () => {
+    expect(codes(`test("x", () => { const fn = jest.fn(); run(fn); expect(fn).toHaveBeenCalled(); });`)).toContain("JS27");
+  });
+
+  it("does not flag JS27 when the unit output is also asserted", () => {
+    expect(codes(`test("x", () => { const fn = jest.fn(); const r = run(fn); expect(fn).toHaveBeenCalled(); expect(r).toBe(2); });`)).not.toContain("JS27");
+  });
+
+  it("does not flag JS27 when the call-tracking subject is not a local double", () => {
+    expect(codes(`test("x", () => { run(logger); expect(logger.log).toHaveBeenCalled(); });`)).not.toContain("JS27");
+  });
+
+  // --- JS26 fake timers installed but never advanced (#75) --------------------
+  it("JS26: fake timers installed, setTimeout armed, never advanced", () => {
+    expect(codes(`test("x", () => { vi.useFakeTimers(); let v = 0; setTimeout(() => { v = 1; }, 100); expect(v).toBe(0); });`)).toContain("JS26");
+  });
+
+  it("does not flag JS26 when the timers are advanced before asserting", () => {
+    expect(codes(`test("x", () => { vi.useFakeTimers(); let v = 0; setTimeout(() => { v = 1; }, 100); vi.runAllTimers(); expect(v).toBe(1); });`)).not.toContain("JS26");
+  });
+
+  // --- JS29 resolves/rejects not awaited or returned (#76) --------------------
+  it("JS29: a bare expect(...).resolves chain is not awaited", () => {
+    expect(codes(`test("x", () => { expect(p).resolves.toBe(1); });`)).toContain("JS29");
+  });
+
+  it("does not flag JS29 when the resolves chain is awaited", () => {
+    expect(codes(`test("x", async () => { await expect(p).resolves.toBe(1); });`)).not.toContain("JS29");
+  });
+
+  it("does not flag JS29 when the rejects chain is returned", () => {
+    expect(codes(`test("x", () => { return expect(p).rejects.toThrow(); });`)).not.toContain("JS29");
+  });
+
+  // --- C8b toBeCloseTo without a precision argument (#77) ---------------------
+  it("C8b: toBeCloseTo with no precision argument", () => {
+    expect(codes(`test("x", () => { expect(total).toBeCloseTo(0.3); });`)).toContain("C8b");
+  });
+
+  it("does not flag C8b when an explicit precision is passed", () => {
+    expect(codes(`test("x", () => { expect(total).toBeCloseTo(0.3, 5); });`)).not.toContain("C8b");
+  });
+
+  // --- C11a self-confirming literal (#77) -------------------------------------
+  it("C11a: expected is bound from the same call under test", () => {
+    expect(codes(`test("x", () => { const expected = foo(); expect(foo()).toBe(expected); });`)).toContain("C11a");
+  });
+
+  it("does not flag C11a when the expected value is an independent literal", () => {
+    expect(codes(`test("x", () => { const expected = 42; expect(foo()).toBe(expected); });`)).not.toContain("C11a");
+  });
+
+  it("does not flag C11a when the expected value comes from a different call", () => {
+    expect(codes(`test("x", () => { const expected = bar(); expect(foo()).toBe(expected); });`)).not.toContain("C11a");
+  });
+
   // --- JS3 inline-snapshot refinement (#50) -----------------------------------
   it("JS3: empty inline snapshot carries the self-writing detail", () => {
     const src = `test("x", () => { expect(tree).toMatchInlineSnapshot(); });`;
