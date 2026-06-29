@@ -8,7 +8,7 @@ never in this repo. This file tracks the public product only.
 
 ## Version
 
-- Current: **0.4.0** (npm: `npm install -D falsegreen-js`)
+- Current: **0.5.0** (npm: `npm install -D falsegreen-js`)
 - Versioning: semver; releases via trusted publishing (OIDC).
 
 ## CI health

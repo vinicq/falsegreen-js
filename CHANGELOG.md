@@ -6,6 +6,8 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-06-28
+
 ### Added
 - `JS23` (high, J1): `expect.assertions(N)` with a numeric `N` higher than the unconditional,
   reachable, non-nested `expect()` calls that can run. The guard can never be met, so the test
@@ -219,7 +221,8 @@ All notable changes to this project are documented here. The format is based on
 - pre-commit hook (`.pre-commit-hooks.yaml`), CI matrix (Node 18/20/22), and an npm
   trusted-publishing release workflow.
 
-[Unreleased]: https://github.com/vinicq/falsegreen-js/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/vinicq/falsegreen-js/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/vinicq/falsegreen-js/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/vinicq/falsegreen-js/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/vinicq/falsegreen-js/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/vinicq/falsegreen-js/compare/v0.1.0...v0.2.0
