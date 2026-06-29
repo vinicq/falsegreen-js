@@ -6,6 +6,8 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-06-29
+
 ### Added
 - `JS25` (high, J1): the only assertion sits inside an array-iterator callback
   (`forEach`/`map`/`filter`/`some`/`every`/`flatMap`). On an empty collection the
