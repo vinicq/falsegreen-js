@@ -24,6 +24,97 @@ Covers `.js`, `.jsx`, `.ts`, `.tsx`, `.mjs`, `.cjs`, `.mts`, `.cts`.
 | [robotframework-falsegreen](https://github.com/vinicq/robotframework-falsegreen) | Robot Framework | `pip install robotframework-falsegreen` | [PyPI](https://pypi.org/project/robotframework-falsegreen/) |
 | [falsegreen-skill](https://github.com/vinicq/falsegreen-skill) | semantic LLM pass | `npx falsegreen-skill analyze <path>` | [npm](https://www.npmjs.com/package/falsegreen-skill) |
 
+## Quick guide for first-time users
+
+New here? Start with these five sections. They get you from zero to a CI gate. The deeper reference (every code, the scope rules, the research) follows after.
+
+### What it does
+
+falsegreen-js reads your Jest / Vitest / Mocha / Playwright tests and finds the ones that pass green without checking anything. A test can call your code, run, and report success while asserting nothing real, so a bug ships and the green bar lies about it. The scanner reads the test files only (it never runs them) and flags the spots a parser can prove are empty, always true, unreachable, or never awaited.
+
+A test it flags, and the fix:
+
+```ts
+// BAD: runs the code, then asserts a constant. It can never fail.
+test("sum adds numbers", () => {
+  const result = sum(2, 3);
+  expect(true).toBe(true);
+});
+
+// CLEAN: asserts the actual result. Breaks if sum() breaks.
+test("sum adds numbers", () => {
+  expect(sum(2, 3)).toBe(5);
+});
+```
+
+### Install
+
+```bash
+npm install -g falsegreen-js
+```
+
+Or skip the install and run the latest from npm with `npx falsegreen-js .`. For a project-local dev dependency, `npm install -D falsegreen-js`. Needs Node 18 or newer.
+
+### Quick start
+
+Point it at your project:
+
+```bash
+npx falsegreen-js .
+```
+
+Run on the `sum` example above and you get:
+
+```
+sum.test.ts
+  HIGH C5   L5  always-true check (expect(true).toBe(true), assert(1))
+         both sides are the same literal
+         level: unit   fix: assert the real behaviour, not a constant or tautology
+
+1 high, 0 low. https://github.com/vinicq/falsegreen-js
+By level: unit:1
+Top fixes:
+  C5 (1): assert the real behaviour, not a constant or tautology
+```
+
+How to read that finding:
+
+- `sum.test.ts` then `L5` - the file and line.
+- `C5` - the code. C5 is "always-true check". The catalog (below) explains every code.
+- `level: unit` - which level of the test pyramid this file sits at.
+- `fix:` - the one-line hint. Here: assert the real behaviour, not a constant.
+
+`node dist/cli.js .` runs the same scan from a cloned checkout.
+
+### Common options
+
+```bash
+npx falsegreen-js . --json          # machine-readable JSON instead of text
+npx falsegreen-js . --format sarif  # text (default) | json | sarif | junit
+npx falsegreen-js . --disable C7,JS3  # turn specific codes off
+```
+
+Exit codes wire it into CI: `0` clean, `10` low-confidence findings only, `20` at least one high-confidence finding. Block the build on `20`.
+
+GitHub Actions:
+
+```yaml
+name: falsegreen-js
+on: [push, pull_request]
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: "20" }
+      - run: npx falsegreen-js .   # exit 20 fails the job
+```
+
+### What the codes mean
+
+Each finding carries a code and a confidence. HIGH codes are near-certain and block the commit; LOW codes warn and want a human look. Codes shared with the Python scanner keep the same id (`C5`, `C7`, `C2b`...); `JS*` codes are JS/TS-specific (`JS1` focused `it.only`, `JS2` `expect` with no matcher, `JS5` an async query never awaited). The full list is in the [Case catalog](#case-catalog) below and the [online docs](https://vinicq.github.io/falsegreen-docs/).
+
 ## Why
 
 A test can be green and still protect nothing: an empty body, an assertion that is
