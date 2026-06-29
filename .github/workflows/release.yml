@@ -38,9 +38,18 @@ jobs:
       - run: npm ci
       - run: npm run build
       - run: npm test
-      - name: Tag matches package version
+      - name: Version parity (tag == package.json == CITATION == CHANGELOG)
         if: github.event_name == 'release'
-        run: test "v$(node -p "require('./package.json').version")" = "${{ github.ref_name }}"
+        run: |
+          v=$(node -p "require('./package.json').version")
+          tag="${GITHUB_REF_NAME#v}"
+          cff=$(grep -m1 '^version:' CITATION.cff | cut -d' ' -f2)
+          fail=0
+          [ "$tag" = "$v" ] || { echo "::error::tag ${GITHUB_REF_NAME} != package.json $v"; fail=1; }
+          [ "$cff" = "$v" ] || { echo "::error::CITATION.cff $cff != package.json $v"; fail=1; }
+          grep -qF "## [$v]" CHANGELOG.md || { echo "::error::CHANGELOG.md has no section for $v"; fail=1; }
+          [ "$fail" = 0 ] && echo "version parity OK: $v"
+          exit $fail
       - name: Publish to npm (skip if the version is already published)
         env:
           # npm Automation token (Settings -> secrets -> NPM_TOKEN). Token auth is
