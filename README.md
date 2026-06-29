@@ -464,6 +464,18 @@ A real API or database call inside a test that claims to be a unit test is itsel
 (mystery guest, environment coupling), not the level of the test. C23 flags the hard-coded
 file path or URL form.
 
+### Patterns by test level and scope
+
+The same false-green shape is classified by the level the test runs at: the level is a
+per-finding axis (J3), read as unit, integration, or E2E. The codes that cluster at each
+level in JS/TS:
+
+- **Unit:** `JS30` (literal-vs-literal assertion), `JS27` (`toHaveBeenCalled*` as the sole oracle), `JS8` (mocks the unit under test).
+- **Integration:** `C50` (captured log never asserted), `S12` (patches core logic instead of an external edge).
+- **E2E:** `JS25` (the only assertion sits in an array-iterator callback), `C16` (uncontrolled time, a fixed timer).
+
+Full matrix on the docs site: [patterns by test level](https://vinicq.github.io/falsegreen-docs/concepts/by-test-level/) and [what we do not flag](https://vinicq.github.io/falsegreen-docs/concepts/what-we-do-not-flag/).
+
 ## Case catalog
 
 Codes shared with `falsegreen` (Python) keep the same id, so cross-language results
