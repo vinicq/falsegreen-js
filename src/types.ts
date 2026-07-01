@@ -8,6 +8,7 @@ export interface Finding {
   confidence: Confidence;
   title: string;
   level: PyramidLevel; // unit | integration | e2e; set per file in scanFile
+  snippet?: string;    // trimmed source line, set in scanFile; folded into the fingerprint
 }
 
 export function makeFinding(

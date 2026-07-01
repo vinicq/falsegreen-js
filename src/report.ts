@@ -3,11 +3,10 @@
  * contract (SARIF 2.1.0, JUnit XML, content fingerprint) so the two scanners
  * produce interchangeable reports and a CI pipeline can swap one for the other.
  *
- * Divergence from falsegreen (Python): the js Finding carries no source snippet,
- * so the content fingerprint hashes relpath + code + detail only (Python also
- * folds in a normalized snippet). The fingerprint stays stable across unrelated
- * line shifts in both tools; the js id is just coarser when two findings share
- * the same code and detail in one file.
+ * The content fingerprint hashes relpath + code + detail + snippet (parity with
+ * the Python sibling). It stays stable across unrelated line shifts but stays
+ * distinct per source occurrence, so a net-new finding of a fixed-detail code is
+ * not masked by a baselined one on another line.
  */
 import * as fs from "node:fs";
 import * as path from "node:path";
@@ -149,13 +148,15 @@ export function renderJunit(findings: Finding[]): string {
 // ---------------------------------------------------------------------------
 
 /**
- * Stable id: sha1(relpath + "\0" + code + "\0" + detail)[:16]. No line number,
- * so the fingerprint survives unrelated line shifts in the file. The js
- * fingerprint omits the source snippet the Python tool folds in, since the js
- * Finding does not carry one.
+ * Stable id: sha1(relpath + "\0" + code + "\0" + detail + "\0" + snippet)[:16].
+ * No line number, so the fingerprint survives unrelated line shifts. The
+ * trimmed source snippet is folded in (parity with the Python tool) so two
+ * occurrences of the same code+detail on different source lines get distinct
+ * fingerprints: a net-new occurrence is no longer masked by a baselined one
+ * whose detail happens to be fixed (C6, C2b, JS13, C21, …).
  */
 export function fingerprint(f: Finding): string {
-  const key = [relUri(f.file), f.code, f.detail || ""].join("\0");
+  const key = [relUri(f.file), f.code, f.detail || "", f.snippet || ""].join("\0");
   return createHash("sha1").update(key, "utf-8").digest("hex").slice(0, 16);
 }
 

@@ -7,7 +7,7 @@ import {
 } from "./oracles.js";
 import { lineOf } from "./parse.js";
 import { assertionsInDeadCode, hasUnconditionalAssertion } from "./cfg.js";
-import { detectPyramidLevel } from "./level.js";
+import { detectPyramidLevel, HTTP_CLIENT_ROOTS } from "./level.js";
 
 // --- test framework vocabulary (runner-agnostic) ---------------------------
 // it/test/specify (Jest, Vitest, Mocha, Jasmine, AVA, node:test, Cypress,
@@ -1394,12 +1394,18 @@ export function analyze(sf: ts.SourceFile): Finding[] {
 
       // C23 mystery guest: real file at a literal path, or a hard-coded URL
       {
-        const leaf = name.split(".").pop() ?? "";
+        const parts = name.split(".");
+        const leaf = parts[parts.length - 1] ?? "";
+        const httpRoot = parts.length > 1 && HTTP_CLIENT_ROOTS.has(parts[0]);
         const a0 = node.arguments[0];
         const lit = a0 && ts.isStringLiteral(a0) ? a0.text : null;
+        // `.get("http…")` is a real fetch only on a known HTTP client root
+        // (axios/got/superagent/…); cache.get / map.get / redis.get with a
+        // url-shaped key must not count. `fetch` is always the global fetch.
+        const isHttpCall = leaf === "fetch" || name === "fetch" || (leaf === "get" && httpRoot);
         if (lit && /^(readFileSync|readFile|openSync|createReadStream)$/.test(leaf) && /[\\/]/.test(lit)) {
           push(lineOf(sf, node), "C23", "reads a real file at a literal path");
-        } else if (lit && (leaf === "fetch" || name === "fetch" || leaf === "get") && /^https?:\/\//i.test(lit)) {
+        } else if (lit && isHttpCall && /^https?:\/\//i.test(lit)) {
           push(lineOf(sf, node), "C23", "hard-coded URL (mystery guest)");
         }
       }
