@@ -552,6 +552,18 @@ describe("falsegreen-js rules", () => {
     expect(codes(`test("x", () => { const r = fetch("https://api.example.com/u"); expect(r).toBeDefined(); });`)).toContain("C23");
   });
 
+  it("C23: axios.get with a hard-coded URL still fires", () => {
+    expect(codes(`test("x", () => { const r = axios.get("https://api.example.com/u"); expect(r).toBeDefined(); });`)).toContain("C23");
+  });
+
+  it("C23: cache.get with a url-shaped key does not fire (not an HTTP client)", () => {
+    expect(codes(`test("x", () => { const r = cache.get("http://key/thing"); expect(r).toBeDefined(); });`)).not.toContain("C23");
+  });
+
+  it("C23: redis.get with a url-shaped key does not fire", () => {
+    expect(codes(`test("x", () => { const r = redis.get("https://k/v"); expect(r).toBeDefined(); });`)).not.toContain("C23");
+  });
+
   // --- C48: dark patch (test flips a test-mode flag then asserts) ----------
   it("C48: sets process.env.NODE_ENV=test then asserts", () => {
     expect(codes(`test("x", () => { process.env.NODE_ENV = "test"; expect(feature()).toBe("ok"); });`)).toContain("C48");

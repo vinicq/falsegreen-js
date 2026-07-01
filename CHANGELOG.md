@@ -6,6 +6,30 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+### Fixed
+
+- `discover()` no longer aborts the whole scan on an unreadable directory (#88).
+  A dir that passes `statSync` but throws `EPERM`/`EACCES` on `readdirSync` is now
+  skipped and the walk continues, matching Python's `os.walk`. Before, the
+  exception unwound the recursion and the scan returned an empty green result -
+  the exact false-green mode the tool exists to catch.
+- C23 (mystery guest) no longer flags `.get("http…")` on non-HTTP receivers
+  (#88). The `.get` clause is anchored to known HTTP client roots
+  (axios/got/superagent/supertest/request/node-fetch/cross-fetch/undici/pactum,
+  reusing the HTTP subset of `INTEGRATION_ROOTS`), so `cache.get`, `map.get` and
+  `redis.get` with a url-shaped key are no longer false positives. `fetch` and
+  `axios.get` still fire.
+
+### Changed
+
+- **Breaking (baseline):** the baseline fingerprint now folds in the trimmed
+  source snippet - `sha1(relpath + code + detail + snippet)[:16]` (#88). This
+  fixes a masked-net-new bug: two occurrences of a fixed-`detail` code (C6, C2b,
+  JS13, C21) on different lines collapsed to one fingerprint, so `--baseline`
+  suppressed the new occurrence. This is parity with the Python scanner. **Any
+  baseline written by an earlier version is invalidated and must be regenerated
+  with `--write-baseline`.**
+
 ## [0.6.3] - 2026-06-29
 
 ### Added

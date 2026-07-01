@@ -63,11 +63,12 @@ the chosen format to a file or to `report.<ext>` inside a directory.
 The **baseline ratchet** (`--baseline [PATH]` / `--write-baseline [PATH]`, default
 `.falsegreen-baseline.json`) lets a project adopt the scanner without fixing every legacy
 finding first. A finding's identity is a content fingerprint, `sha1(relpath + code +
-detail)[:16]`, with no line number, so it survives unrelated line shifts. `--baseline`
-suppresses any finding whose fingerprint is recorded, and the filter runs **before** the
-exit code, so CI fails only on net-new findings. The js fingerprint omits the source snippet
-the Python scanner folds in (the js `Finding` carries no snippet), the one intentional
-divergence from the Python contract.
+detail + snippet)[:16]`, with no line number, so it survives unrelated line shifts but stays
+distinct per source occurrence. The trimmed source line is folded in (parity with the Python
+scanner): without it, two occurrences of a code whose `detail` is fixed (C6, C2b, JS13, C21)
+collapse to one fingerprint, and a net-new occurrence gets masked by a baselined one on
+another line. `--baseline` suppresses any finding whose fingerprint is recorded, and the
+filter runs **before** the exit code, so CI fails only on net-new findings.
 
 ## The case catalog and the risk-group taxonomy
 

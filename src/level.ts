@@ -12,10 +12,18 @@ const E2E_ROOTS = new Set<string>([
 // HTTP clients / API mocks and real datastore drivers or ORMs. A test importing
 // one of these crosses an I/O boundary (API or database): it is an integration
 // test, where the response or the row is the oracle.
+// HTTP client packages whose `.get(url)` is a real network fetch (vs. cache.get,
+// map.get, redis.get). Used to anchor C23's hard-coded-URL clause so it fires
+// only on an HTTP client root, not any `.get("http…")`. Subset of the API/HTTP
+// entries in INTEGRATION_ROOTS.
+export const HTTP_CLIENT_ROOTS = new Set<string>([
+  "axios", "got", "superagent", "supertest", "request", "node-fetch",
+  "cross-fetch", "undici", "pactum",
+]);
+
 const INTEGRATION_ROOTS = new Set<string>([
   // API / HTTP
-  "supertest", "axios", "node-fetch", "cross-fetch", "got", "undici",
-  "superagent", "request", "nock", "msw", "pactum",
+  ...HTTP_CLIENT_ROOTS, "nock", "msw",
   // database drivers / ORMs
   "@prisma/client", "prisma", "typeorm", "sequelize", "mongoose", "mongodb",
   "pg", "mysql", "mysql2", "redis", "ioredis", "knex", "better-sqlite3",

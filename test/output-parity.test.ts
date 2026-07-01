@@ -101,6 +101,14 @@ describe("content fingerprint", () => {
     const distinct = new Set([fingerprint(base), fingerprint(otherCode), fingerprint(otherDetail)]);
     expect(distinct.size).toBe(3);
   });
+
+  it("distinguishes same code+detail on different source lines by snippet", () => {
+    // A fixed-detail code (C6) at two call sites with different source: distinct
+    // fingerprints, so a net-new occurrence is not masked by a baselined one.
+    const at10 = { ...makeFinding("src/a.test.ts", 10, "C6", "only checks presence"), level: "unit" as const, snippet: `expect(a).toBeDefined();` };
+    const at55 = { ...makeFinding("src/a.test.ts", 55, "C6", "only checks presence"), level: "unit" as const, snippet: `expect(z).toBeDefined();` };
+    expect(fingerprint(at10)).not.toBe(fingerprint(at55));
+  });
 });
 
 describe("baseline ratchet", () => {
@@ -122,6 +130,18 @@ describe("baseline ratchet", () => {
     const newer = { ...makeFinding("src/c.test.ts", 5, "C5", "always true"), level: "unit" as const };
     const filtered = applyBaseline([...known, newer], baseline);
     expect(filtered.map((f) => f.code)).toEqual(["C5"]);
+  });
+
+  it("keeps a net-new occurrence of a fixed-detail code and suppresses the shifted one", () => {
+    // Acceptance (#88 item 2): baseline has C6 with snippet S1 (was L10). New
+    // scan: same C6 shifted to L12 (still snippet S1) + a net-new C6 at L55
+    // (snippet S2). Only the L55 one survives applyBaseline.
+    const baselined = { ...makeFinding("src/a.test.ts", 10, "C6", "only checks presence"), level: "unit" as const, snippet: `expect(a).toBeDefined();` };
+    const baseline = new Set([fingerprint(baselined)]);
+    const shifted = { ...makeFinding("src/a.test.ts", 12, "C6", "only checks presence"), level: "unit" as const, snippet: `expect(a).toBeDefined();` };
+    const netNew = { ...makeFinding("src/a.test.ts", 55, "C6", "only checks presence"), level: "unit" as const, snippet: `expect(z).toBeDefined();` };
+    const filtered = applyBaseline([shifted, netNew], baseline);
+    expect(filtered.map((f) => f.line)).toEqual([55]);
   });
 
   it("returns an empty set for an unreadable baseline file", () => {
