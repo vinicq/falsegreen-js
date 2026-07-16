@@ -1100,7 +1100,11 @@ export function analyze(sf: ts.SourceFile): Finding[] {
         const stringish = a0 !== undefined &&
           (ts.isStringLiteral(a0) || ts.isNoSubstitutionTemplateLiteral(a0) || ts.isTemplateExpression(a0));
         const constTrue = literalTruthiness(a0) === true;
-        if (!(isPlaywright && name.endsWith(".skip") && !stringish && !constTrue)) {
+        // Only `test.skip` itself is the runtime-conditional form. `test.describe.skip`
+        // and `it.skip(fn)` are unconditionally-disabled suites/tests (name ends in
+        // ".skip" too), so match the exact callee, not the suffix, or they'd be a
+        // silent false negative.
+        if (!(isPlaywright && name === "test.skip" && !stringish && !constTrue)) {
           push(lineOf(sf, node), "JS4", `skipped via ${name}`);
         }
       }

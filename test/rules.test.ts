@@ -1155,5 +1155,18 @@ describe("falsegreen-js rules", () => {
     const src = `const { test, expect } = require("some-runner");\ntest("y", async ({ request }) => { test.skip(!process.env.X, "reason"); const r = await request.get("/u"); expect(r.status).toBe(200); });`;
     expect(codes(src, "adv.spec.ts")).toContain("JS4");
   });
+
+  // Only test.skip itself is the conditional form. test.describe.skip and it.skip
+  // are unconditionally-disabled suites/tests and must still fire JS4 even in a
+  // Playwright file (name ends in ".skip" but is not the runtime guard).
+  it("still flags JS4 for a title-less test.describe.skip in a Playwright file", () => {
+    const src = `import { test, expect } from "@playwright/test";\ntest.describe.skip(() => { test("x", async ({ page }) => { await expect(page).toHaveURL("/"); }); });`;
+    expect(codes(src, "e.spec.ts")).toContain("JS4");
+  });
+
+  it("still flags JS4 for a title-less it.skip(fn) in a Playwright file", () => {
+    const src = `import { test, expect } from "@playwright/test";\ntest.describe("s", () => { it.skip(() => { expect(a).toBe(b); }); });`;
+    expect(codes(src, "e.spec.ts")).toContain("JS4");
+  });
 });
 
