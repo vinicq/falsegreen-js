@@ -120,6 +120,10 @@ a snapshot alongside a real assertion.
 ```ts
 it.skip("a", () => { ... });                // flagged. Also xit, it.todo
 ```
+Clean look-alike: a Playwright conditional `test.skip(browserName === "firefox", "reason")`
+(or `test.skip(({ browserName }) => ...)`) is a runtime guard - the test still runs on the
+other browsers - so it is not flagged. An unconditional `test.skip("title", fn)`,
+`test.skip(true, "...")`, or `test.describe.skip` still is.
 
 ## JS5 - async query/event not awaited (low, J1)
 
@@ -198,6 +202,18 @@ the table, or remove the `.each`.
 `request(app).get("/users").expect(200)` (supertest / chai-http) is recognized as an
 assertion: `.expect()` throws on a mismatch, so an API integration test built this way is
 not mistaken for C2b (calls but checks nothing).
+
+A Playwright API spec (`async ({ request }) => { const r = await request.get("/x"); await
+expect(r).toBeOK(); }`) is handled the same as its UI E2E specs: the `expect(r).toBeOK()`
+counts as a real assertion, and a `test.beforeEach` that only seeds state is a hook, not a
+test, so neither reports C2b.
+
+## A note on hooks
+
+Lifecycle hooks (`beforeEach`/`afterEach`/`beforeAll`/`afterAll`, and the Playwright
+`test.beforeEach`/... forms) are setup/teardown, not test cases. Their bodies are not
+required to assert, so a hook that only calls setup code is never flagged C2b. The
+assertion belongs in the `test(...)`/`it(...)`.
 
 ---
 

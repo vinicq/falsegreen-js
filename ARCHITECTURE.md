@@ -35,7 +35,16 @@ The code mirrors that flow, one file per stage:
    and runs without the project's `tsconfig` or `node_modules`.
 3. **Analyze.** A single visitor pass. It recognizes assertion vocabulary across runners
    (Jest/Vitest `expect`, chai `.to`/`.should`, `assert*`, AVA `t.is`) so a Mocha or AVA
-   test is not mistaken for one that checks nothing.
+   test is not mistaken for one that checks nothing. A call on the `test` root is
+   disambiguated by its member: `test.beforeEach`/`afterEach`/`beforeAll`/`afterAll`,
+   `test.describe`, and `test.step` are hooks/suites/steps, not test bodies (so the
+   test-body codes do not run on them), while `test.only`/`serial`/`fail`/`failing` stay
+   test bodies. A file is treated as Playwright - which only relaxes JS4 for a conditional
+   `test.skip(cond)`, nothing else - when it imports `@playwright/test`, calls a namespaced
+   `test.*` API member, or destructures a Playwright fixture (`browserName`, or
+   `page`/`context`/`request` corroborated by a Playwright-exclusive matcher). This last
+   signal (`level.ts`) is deliberately separate from the pyramid-level detection, so it
+   cannot turn a Jest/Vitest file into a browser-layer one.
 4. **Report.** Readable text or JSON (`--json`). The exit code is the CI contract.
 
 ## Output contract

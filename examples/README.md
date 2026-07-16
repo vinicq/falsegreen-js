@@ -25,6 +25,7 @@ Files are grouped by RiskGroup, the conceptual failure mode in `src/cases.ts`:
 | `cypress.cy.ts` | Cypress query never asserted | JS24 |
 | `diagnostics.test.ts` | maintainability (opt-in, off by default) | D1, D3, D4, D6, D7, D8, M2 |
 | `c16-fake-timers.test.ts` | C16 frozen-clock look-alike | (none: time controlled) |
+| `playwright.spec.js` | Playwright UI + API look-alike | (only JS31: hooks / conditional skip / non-sole weak check are clean) |
 
 Two codes need their own file because a file-wide signal changes the result:
 
@@ -33,6 +34,11 @@ Two codes need their own file because a file-wide signal changes the result:
   reads live in `nondeterminism.test.ts` (no such token); the frozen-clock CLEAN
   look-alike lives in `c16-fake-timers.test.ts`.
 - **JS24** reads as a Cypress spec only in a `.cy.ts` file, so it has its own.
+- **`playwright.spec.js`** is a pure regression look-alike (UI + API), not a BAD
+  case: it exercises the Playwright false positives the scanner used to emit -
+  hooks read as C2b, a conditional `test.skip(cond)` read as JS4, a non-sole weak
+  check read as C6 - and asserts that after the fix only the one genuine `JS31`
+  (a swallowing try/catch in `afterAll`) remains.
 
 ## Run the scanner on the examples
 

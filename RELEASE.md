@@ -25,8 +25,9 @@ publish step.
 
 ## Publishing a version
 
-1. Bump `version` in `package.json` and the `VERSION` constant in `src/cli.ts` (and the
-   `VERSION` in any doc) in lockstep.
+1. Bump `version` in `package.json` and `CITATION.cff` in lockstep, and update `STATUS.md`.
+   `src/cli.ts` needs no change: `readVersion()` reads `version` from `package.json` at
+   runtime, so `--version` and the JSON report never drift.
 2. Move the `[Unreleased]` entries in `CHANGELOG.md` under the new version with today's date.
 3. Run the self-scan: `npm run build && node dist/cli.js test`. It must report zero HIGH
    findings before tagging.

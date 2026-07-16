@@ -7,7 +7,7 @@ import {
 } from "./oracles.js";
 import { lineOf } from "./parse.js";
 import { assertionsInDeadCode, hasUnconditionalAssertion } from "./cfg.js";
-import { detectPyramidLevel, HTTP_CLIENT_ROOTS } from "./level.js";
+import { detectPyramidLevel, HTTP_CLIENT_ROOTS, fileImportsPlaywright, fileUsesPlaywrightApi, fileHasPlaywrightFixtureSignal } from "./level.js";
 
 // --- test framework vocabulary (runner-agnostic) ---------------------------
 // it/test/specify (Jest, Vitest, Mocha, Jasmine, AVA, node:test, Cypress,
@@ -20,6 +20,21 @@ const TEST_BLOCK_ROOTS = new Set(["it", "test", "specify"]);
 const SUITE_ROOTS = new Set(["describe", "context", "suite", "fdescribe", "xdescribe", "fcontext", "xcontext"]);
 const FOCUS_NAMES = new Set(["fit", "fdescribe", "fcontext"]);
 
+// `.member` calls on it/test/specify that are NOT test bodies: lifecycle hooks
+// (Jest/Vitest/AVA/Playwright), suite/step/config helpers (Playwright
+// test.describe/step/use/info/configure/setTimeout), and the declared-skip
+// modifiers (skip/todo/fixme — JS4 owns those, the body never runs). Excluded
+// from isTestBlock so their bodies are not scanned as test bodies. KEEPS
+// test.only / test.serial / test.fail / test.failing (AVA) as test blocks
+// (they run). Keying on the modifier (name.split(".")[1]) means test.describe.*
+// (serial/parallel/configure) is caught via "describe" while bare test.serial
+// (AVA) is not. Playwright API tests and UI E2E share the same hooks, so this
+// covers both.
+const NON_TEST_MEMBERS = new Set([
+  "beforeEach", "afterEach", "beforeAll", "afterAll", "before", "after",
+  "describe", "step", "use", "info", "configure", "setTimeout", "skip", "todo", "fixme",
+]);
+
 // Array-iterator methods whose callback runs once per element — zero times on an
 // empty collection. An assertion that lives ONLY inside one of these callbacks
 // (JS25) runs zero times when the receiver is empty: green with nothing checked.
@@ -31,6 +46,16 @@ const ARRAY_ITERATOR_METHODS = new Set(["forEach", "map", "filter", "some", "eve
 // the Jest-only C5/C7/C8 lanes) on purpose.
 const EQ_MATCHERS_ANY = new Set([
   "toBe", "toEqual", "toStrictEqual", "toBeCloseTo", "equal", "equals", "eql", "is",
+]);
+
+// Binary comparison operators. A subject that is itself a comparison (`a === b`)
+// wrapped in a truthy/equality matcher is JS15's blind-boolean lane, not C6.
+// Shared by the JS15 detector and the C6-weak classifier (one source of truth).
+const COMPARISON_OPS = new Set<ts.SyntaxKind>([
+  ts.SyntaxKind.EqualsEqualsEqualsToken, ts.SyntaxKind.ExclamationEqualsEqualsToken,
+  ts.SyntaxKind.EqualsEqualsToken, ts.SyntaxKind.ExclamationEqualsToken,
+  ts.SyntaxKind.LessThanToken, ts.SyntaxKind.GreaterThanToken,
+  ts.SyntaxKind.LessThanEqualsToken, ts.SyntaxKind.GreaterThanEqualsToken,
 ]);
 
 // toHaveBeenCalled* family (JS27): matchers that only assert a double was invoked.
@@ -769,6 +794,49 @@ function enclosingTestBody(node: ts.Node): ts.Block | null {
   return null;
 }
 
+/** C6-weak oracle test (sole-oracle model). A non-literal, non-comparison subject
+ *  checked only for presence (toBeTruthy/toBeFalsy/toBeDefined) or for a `.length`
+ *  lower bound that only rules out empty (toBeGreaterThan(0) /
+ *  toBeGreaterThanOrEqual(1)). Negation is not inspected: `not.toBeTruthy()` is
+ *  equally weak, so it never counts as the strong "other oracle" that suppresses
+ *  C6. Single source of truth for the C6 firing site and the body scan. */
+function isC6WeakChain(chain: ExpectChain, sf: ts.SourceFile): boolean {
+  const subj = chain.subject;
+  if (!subj || isLiteral(subj)) return false;
+  if (ts.isBinaryExpression(subj) && COMPARISON_OPS.has(subj.operatorToken.kind)) return false;
+  if (chain.matcher === "toBeTruthy" || chain.matcher === "toBeFalsy" || chain.matcher === "toBeDefined") {
+    return true;
+  }
+  const arg = chain.args[0];
+  return !!arg && ts.isNumericLiteral(arg) &&
+    ((chain.matcher === "toBeGreaterThan" && Number(arg.text) === 0) ||
+     (chain.matcher === "toBeGreaterThanOrEqual" && Number(arg.text) === 1)) &&
+    /\.length\b/.test(subj.getText(sf));
+}
+
+/** True if the it/test/specify body enclosing `node` holds an assertion that is
+ *  NOT a C6-weak check — a real oracle (strong matcher, assert.*, `.should`,
+ *  supertest .expect, custom assert-prefixed / expect-prefixed helper). Walks the whole body,
+ *  including nested callbacks: any assertion the author bothered to write means
+ *  the weak check is not the sole oracle, so C6 stays quiet (FP-averse; C6 is
+ *  low severity). No enclosing test body -> false (weak check is sole by
+ *  construction). */
+function testBodyHasNonWeakAssertion(node: ts.Node, sf: ts.SourceFile): boolean {
+  const body = enclosingTestBody(node);
+  if (!body) return false;
+  let found = false;
+  const walk = (n: ts.Node): void => {
+    if (found) return;
+    if (isAssertionNode(n)) {
+      const chain = ts.isCallExpression(n) ? expectChain(n) : null;
+      if (!(chain && isC6WeakChain(chain, sf))) { found = true; return; }
+    }
+    ts.forEachChild(n, walk);
+  };
+  walk(body);
+  return found;
+}
+
 const FAKE_TIMER_INSTALL = /\b(useFakeTimers|installFakeTimers)\b/;
 
 const FAKE_TIMER_FLUSH = /\b(runAllTimers|runOnlyPendingTimers|advanceTimersByTime|tick)\b/;
@@ -973,6 +1041,14 @@ export function analyze(sf: ts.SourceFile): Finding[] {
   // install calls plus the explicit advance/run calls (jest/vi runAllTimers,
   // runOnlyPendingTimers, advanceTimersByTime, sinon clock.tick).
   const fakeTimers = /\b(useFakeTimers|installFakeTimers|runAllTimers|runOnlyPendingTimers|advanceTimersByTime|tick)\b/.test(text);
+  // A Playwright file uses test.skip(cond) as a runtime conditional skip, not a
+  // declared disabled test (JS4). "Playwright" = imports @playwright/test OR calls
+  // a Playwright-exclusive namespaced member (test.describe/step/beforeAll/afterAll):
+  // fixture-sourced suites re-export test/expect (test.extend / mergeTests) and
+  // never import the package directly. Computed once; only the JS4 skip suppression
+  // reads it, so broadening the signal cannot affect any other rule.
+  const isPlaywright = fileImportsPlaywright(sf) || fileUsesPlaywrightApi(sf) ||
+    fileHasPlaywrightFixtureSignal(sf);
 
   const push = (line: number, code: string, detail = ""): void => {
     findings.push(makeFinding(file, line, code, detail));
@@ -1013,14 +1089,28 @@ export function analyze(sf: ts.SourceFile): Finding[] {
         name.endsWith(".todo") ||
         SKIP_NAMES.has(root)
       ) {
-        push(lineOf(sf, node), "JS4", `skipped via ${name}`);
+        // Playwright test.skip(cond[, reason]) / test.skip() is a RUNTIME
+        // conditional skip, not a declared disabled test — suppress JS4 for it.
+        // A stringish arg0 means test.skip("title", fn): a declared skipped test,
+        // which still fires. A literal `true` arg0 (test.skip(true, "disabled")) is
+        // an unconditionally-disabled group — a real dead test, so JS4 keeps firing.
+        // .todo and xit/xdescribe are unaffected; non-Playwright files (node:test
+        // test.skip(fn), Mocha it.skip(fn)) still fire JS4.
+        const a0 = node.arguments[0];
+        const stringish = a0 !== undefined &&
+          (ts.isStringLiteral(a0) || ts.isNoSubstitutionTemplateLiteral(a0) || ts.isTemplateExpression(a0));
+        const constTrue = literalTruthiness(a0) === true;
+        if (!(isPlaywright && name.endsWith(".skip") && !stringish && !constTrue)) {
+          push(lineOf(sf, node), "JS4", `skipped via ${name}`);
+        }
       }
 
       // test-level block body checks (C2, C2b, JS3). Only `it`/`test`/`specify`
       // (and the focus/skip variants) — never `describe`/`suite`, whose body holds
       // nested tests, not assertions.
       const isTestBlock =
-        TEST_BLOCK_ROOTS.has(root) || root === "fit" || root === "xit";
+        (TEST_BLOCK_ROOTS.has(root) || root === "fit" || root === "xit") &&
+        !NON_TEST_MEMBERS.has(modifier);
       if (isTestBlock) {
         const cb = getTestCallback(node);
         // JS18: the test takes a `done` callback instead of async/await. A done
@@ -1274,12 +1364,6 @@ export function analyze(sf: ts.SourceFile): Finding[] {
         // JS15 inappropriate assertion: the comparison is wrapped in a boolean, so
         // the matcher only sees true/false (expect(a === b).toBe(true)). The failure
         // message is blind ("expected false to be true") and the oracle is weak.
-        const COMPARISON_OPS = new Set<ts.SyntaxKind>([
-          ts.SyntaxKind.EqualsEqualsEqualsToken, ts.SyntaxKind.ExclamationEqualsEqualsToken,
-          ts.SyntaxKind.EqualsEqualsToken, ts.SyntaxKind.ExclamationEqualsToken,
-          ts.SyntaxKind.LessThanToken, ts.SyntaxKind.GreaterThanToken,
-          ts.SyntaxKind.LessThanEqualsToken, ts.SyntaxKind.GreaterThanEqualsToken,
-        ]);
         const subjIsComparison = subj !== undefined && ts.isBinaryExpression(subj) &&
           COMPARISON_OPS.has(subj.operatorToken.kind);
         const boolMatcher =
@@ -1315,16 +1399,21 @@ export function analyze(sf: ts.SourceFile): Finding[] {
             push(lineOf(sf, node), "D8", `magic number ${arg.text} in the assertion`);
           }
         }
-        // C6 weak check: truthiness/defined-only, or length > 0, on a real (non-literal) value
-        if (subj && !isLiteral(subj) && !subjIsComparison) {
-          if (chain.matcher === "toBeTruthy" || chain.matcher === "toBeFalsy" || chain.matcher === "toBeDefined") {
-            push(lineOf(sf, node), "C6", "only checks the value is present, not the expected result");
-          } else if (arg && ts.isNumericLiteral(arg) &&
-                     ((chain.matcher === "toBeGreaterThan" && Number(arg.text) === 0) ||
-                      (chain.matcher === "toBeGreaterThanOrEqual" && Number(arg.text) === 1)) &&
-                     /\.length\b/.test(subj.getText(sf))) {
-            push(lineOf(sf, node), "C6", "only checks it is not empty");
-          }
+        // C6 weak check — SOLE-ORACLE model. A presence/non-empty oracle is a
+        // smell only when it is the whole test's oracle. Suppress when the
+        // enclosing test body also holds a non-weak assertion (a real oracle
+        // elsewhere makes the weak line a supplement, not the smell). All-weak
+        // bodies still fire (each weak line flagged); a weak expect with no
+        // enclosing test body is sole by construction. Negation already excluded
+        // by the enclosing `!chain.negated`; literal/comparison subjects by
+        // isC6WeakChain. Matcher-agnostic to runner: applies to Playwright UI/API
+        // tests the same as Jest/Vitest.
+        if (isC6WeakChain(chain, sf) && !testBodyHasNonWeakAssertion(node, sf)) {
+          const isLengthForm =
+            chain.matcher === "toBeGreaterThan" || chain.matcher === "toBeGreaterThanOrEqual";
+          push(lineOf(sf, node), "C6", isLengthForm
+            ? "only checks it is not empty"
+            : "only checks the value is present, not the expected result");
         }
         // C5 always-true
         if (chain.matcher === "toBeTruthy" && literalTruthiness(subj) === true) {

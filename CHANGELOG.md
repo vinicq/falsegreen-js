@@ -6,8 +6,39 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-07-16
+
+### Added
+
+- Playwright support, so a project that mixes `node:test`/Jest/Vitest with
+  Playwright E2E and API specs scans cleanly. Playwright is recognized whether
+  `test`/`expect` come straight from `@playwright/test` or from a fixture
+  re-export (`test.extend`/`mergeTests`, e.g. `@company/e2e/fixtures`), through
+  three signals: the package import, a namespaced `test.*` API call
+  (`test.describe`/`test.step`/`test.beforeAll`/`test.afterAll`), or a Playwright
+  fixture parameter (`browserName` alone, or `page`/`context`/`request`
+  corroborated by a Playwright-exclusive matcher such as `toBeOK`/`toHaveCount`).
+  `expect(locator).toBeVisible()`/`toHaveText()`/`toBeOK()` already counted as
+  assertions; this release adds the hook, skip, and file-recognition handling
+  around them.
+
 ### Fixed
 
+- Playwright lifecycle hooks and suite/step wrappers (`test.beforeEach`/
+  `afterEach`/`beforeAll`/`afterAll`, `test.describe`, `test.step`) are no longer
+  analyzed as test bodies, so a setup/teardown hook that calls code without an
+  assertion no longer reports C2b (and the sibling body-level codes C2/C20/C21/
+  JS3/JS23/D7 no longer misfire on a hook). A hook is not a test; the assertion
+  belongs in the `test(...)`. `test.only`/`test.serial`/`test.fail`/`test.failing`
+  (real running tests, incl. AVA) keep full body analysis.
+- Playwright conditional `test.skip(condition[, reason])`, `test.skip()`, and the
+  predicate-callback form `test.skip(({ browserName }) => ...)` no longer fire
+  JS4: they are runtime guards, not disabled tests. Unconditional declared skips
+  still fire JS4 - `test.skip("title", fn)`, `test.skip(true, "...")` (a group
+  disabled by a constant), `test.describe.skip`, `xit`/`xdescribe`/`it.todo`. The
+  suppression is gated on a Playwright signal AND a non-string first argument, so
+  a `node:test`/Mocha titleless `test.skip(fn)` in a non-Playwright file still
+  fires JS4 (no false negative).
 - `discover()` no longer aborts the whole scan on an unreadable directory (#88).
   A dir that passes `statSync` but throws `EPERM`/`EACCES` on `readdirSync` is now
   skipped and the walk continues, matching Python's `os.walk`. Before, the
@@ -22,6 +53,12 @@ All notable changes to this project are documented here. The format is based on
 
 ### Changed
 
+- C6 (weak check) now uses a **sole-oracle** model across every runner: it fires
+  only when the presence/non-empty check (`toBeTruthy`/`toBeDefined`/`.length`
+  `> 0`) is the enclosing test's ONLY oracle. A weak check followed or preceded
+  by a stronger assertion in the same test (e.g. a `toBeGreaterThan(0)` guard
+  before a `toBe(...)`) is no longer flagged - the strong assertion carries the
+  test. A test whose only assertions are all weak still reports C6.
 - **Breaking (baseline):** the baseline fingerprint now folds in the trimmed
   source snippet - `sha1(relpath + code + detail + snippet)[:16]` (#88). This
   fixes a masked-net-new bug: two occurrences of a fixed-`detail` code (C6, C2b,
