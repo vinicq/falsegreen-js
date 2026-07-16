@@ -52,6 +52,15 @@ describe("examples cover every emitted code", () => {
     expect(found.has("C16")).toBe(false);
   });
 
+  it("playwright.spec.js: after the fix only the genuine JS31 remains", () => {
+    // The Playwright consumer's false positives (hooks read as C2b, a conditional
+    // test.skip read as JS4, a non-sole weak check read as C6) are all silenced,
+    // across both the UI and API blocks; the one real finding (a try/catch that
+    // swallows a throw in afterAll) stays.
+    const found = scanExample("playwright.spec.js");
+    expect([...found].sort()).toEqual(["JS31"]);
+  });
+
   it("every default-on emitted code has an examples case", () => {
     // Drift guard: the union of the per-file codes, plus the config-audit-only
     // PL series (which scan Jest/Vitest config, not test files), must cover the

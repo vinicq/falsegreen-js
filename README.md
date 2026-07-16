@@ -356,7 +356,7 @@ jobs:
 
 ```yaml
   - repo: https://github.com/vinicq/falsegreen-js
-    rev: v0.6.3          # pin a tag; run `pre-commit autoupdate` to move it
+    rev: v0.7.0          # pin a tag; run `pre-commit autoupdate` to move it
     hooks:
       - id: falsegreen-js
 ```
@@ -441,6 +441,16 @@ and Vue Test Utils (`mount`/`wrapper.find`/`flushPromises`/`nextTick`).
 count as real assertions, so a Mocha or AVA test is not mistaken for one that never
 checks anything.
 
+Playwright is covered for both UI E2E and API specs. Its lifecycle hooks
+(`test.beforeEach`/`afterEach`/`beforeAll`/`afterAll`) and suite/step wrappers
+(`test.describe`/`test.step`) are not analyzed as test bodies, so a hook that only
+sets up or tears down is not flagged as "calls but checks nothing". A conditional
+`test.skip(condition, reason)` (and the `test.skip(({ browserName }) => ...)`
+predicate form) is read as a runtime guard, not a disabled test, so it does not
+fire JS4 - while an unconditional `test.skip("title", fn)`, `test.describe.skip`,
+or `xit`/`it.todo` still does. This holds whether `test`/`expect` come from
+`@playwright/test` directly or from a fixture re-export (`test.extend`).
+
 Note: component files (`.vue`, `.svelte`, `.astro`, `.marko`) and templates (`.html`)
 are not test files. Tests for those frameworks are written in `.spec`/`.test` files in
 the eight extensions above, which is what the scanner reads.
@@ -504,7 +514,7 @@ line up in the research. `JS*` codes are ecosystem-specific.
 | JS1 | high | focused test (`it.only` / `fit`) silently skips the rest of the suite |
 | JS2 | high | `expect(x)` with no matcher — the assertion never runs |
 | JS3 | low  | snapshot is the only assertion |
-| JS4 | low  | skipped test (`it.skip` / `xit` / `it.todo`) never runs |
+| JS4 | low  | unconditionally skipped test (`it.skip` / `xit` / `it.todo`) never runs. A Playwright conditional `test.skip(cond, reason)` is a runtime guard, not a disabled test, and is not flagged |
 | JS5 | low  | async query/event not awaited (`findBy*` / `waitFor` / `user-event`) |
 | JS6 | high | empty `describe`/`suite` — the suite is green but runs nothing |
 | JS7 | low  | assertion inside a non-awaited `setTimeout`/`then` callback — may run after the test ends |

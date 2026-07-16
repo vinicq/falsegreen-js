@@ -997,5 +997,176 @@ describe("falsegreen-js rules", () => {
   it("C21 still fires when the for bound is not a literal (loop may run zero times)", () => {
     expect(codes(`it("x", () => { for (let i = 0; i < n; i++) { expect(i).toBeGreaterThanOrEqual(0); } });`)).toContain("C21");
   });
+
+  // --- C6 sole-oracle model ---------------------------------------------------
+  it("C6: fires when the weak check is the sole oracle", () => {
+    expect(codes(`test("x", () => { const r = compute(); expect(r).toBeTruthy(); });`)).toContain("C6");
+  });
+
+  it("C6: sole length-not-empty check still fires", () => {
+    expect(codes(`test("x", () => { expect(items.length).toBeGreaterThan(0); });`)).toContain("C6");
+  });
+
+  it("does not flag C6 when a strong assertion coexists in the same test", () => {
+    const src = `test("x", () => { const r = compute(); expect(r).toBe(42); expect(r).toBeTruthy(); });`;
+    expect(codes(src)).not.toContain("C6");
+  });
+
+  it("does not flag C6 for a length check alongside a strong assertion", () => {
+    const src = `test("x", () => { expect(items.length).toBeGreaterThan(0); expect(items[0]).toBe("a"); });`;
+    expect(codes(src)).not.toContain("C6");
+  });
+
+  it("still flags C6 when every assertion in the body is weak", () => {
+    const src = `test("x", () => { expect(a).toBeTruthy(); expect(b).toBeDefined(); });`;
+    expect(codes(src)).toContain("C6");
+  });
+
+  it("does not flag C6 when the other oracle is a chai/Cypress .should", () => {
+    const src = `test("x", () => { expect(r).toBeTruthy(); result.should.equal(1); });`;
+    expect(codes(src)).not.toContain("C6");
+  });
+
+  it("does not flag C6 when a strong assertion lives in a nested callback", () => {
+    const src = `test("x", () => { expect(r).toBeTruthy(); items.forEach((i) => expect(i).toBe(1)); });`;
+    expect(codes(src)).not.toContain("C6");
+  });
+
+  // --- Playwright: it/test member calls are hooks/suites, not test bodies -----
+  it("does not flag C2b for a Playwright test.beforeEach hook", () => {
+    const src = `import { test, expect } from "@playwright/test";\ntest.beforeEach(async ({ page }) => { await page.goto("/"); });`;
+    expect(codes(src, "e.spec.ts")).not.toContain("C2b");
+  });
+
+  it("does not flag C2b for a Playwright test.afterAll hook", () => {
+    const src = `import { test } from "@playwright/test";\ntest.afterAll(async () => { await teardown(); });`;
+    expect(codes(src, "e.spec.ts")).not.toContain("C2b");
+  });
+
+  it("does not treat test.describe body as a test body (no C2b)", () => {
+    const src = `import { test, expect } from "@playwright/test";\ntest.describe("s", () => { test("a", async ({ page }) => { await expect(page).toHaveURL("/"); }); });`;
+    expect(codes(src, "e.spec.ts")).not.toContain("C2b");
+  });
+
+  it("does not treat test.describe.serial as a test body (no C2b)", () => {
+    const src = `import { test, expect } from "@playwright/test";\ntest.describe.serial("s", () => { test("a", async ({ page }) => { await expect(page).toHaveText("x"); }); });`;
+    expect(codes(src, "e.spec.ts")).not.toContain("C2b");
+  });
+
+  it("keeps test.only as a test block (empty body still flagged C2)", () => {
+    expect(codes(`test.only("x", () => {});`)).toContain("C2");
+  });
+
+  it("keeps AVA test.serial as a test block (empty body still flagged C2)", () => {
+    expect(codes(`test.serial("x", () => {});`)).toContain("C2");
+  });
+
+  // --- Playwright: conditional skip vs declared skip --------------------------
+  it("does not flag JS4 for a Playwright conditional test.skip(cond)", () => {
+    const src = `import { test, expect } from "@playwright/test";\ntest("x", async ({ page, browserName }) => { test.skip(browserName === "webkit", "flaky"); await expect(page.locator("h1")).toBeVisible(); });`;
+    expect(codes(src, "e.spec.ts")).not.toContain("JS4");
+  });
+
+  it("does not flag JS4 for a bare Playwright test.skip()", () => {
+    const src = `import { test, expect } from "@playwright/test";\ntest("x", async ({ page }) => { test.skip(); await expect(page.locator("h1")).toBeVisible(); });`;
+    expect(codes(src, "e.spec.ts")).not.toContain("JS4");
+  });
+
+  it('still flags JS4 for a declared Playwright test.skip("title", fn)', () => {
+    const src = `import { test, expect } from "@playwright/test";\ntest.skip("declared off", async () => { await expect(x).toBe(1); });`;
+    expect(codes(src, "e.spec.ts")).toContain("JS4");
+  });
+
+  it("still flags JS4 for it.skip in a non-Playwright file", () => {
+    expect(codes(`it.skip("x", () => { expect(a).toBe(b); });`)).toContain("JS4");
+  });
+
+  it("still flags JS4 for .todo even in a Playwright file", () => {
+    const src = `import { test } from "@playwright/test";\nit.todo("later");`;
+    expect(codes(src, "e.spec.ts")).toContain("JS4");
+  });
+
+  // --- Playwright API tests (request fixture) are covered like UI ------------
+  it("a Playwright API test asserting toBeOK is clean (CommonJS .spec.js)", () => {
+    const src = `const { test, expect } = require("@playwright/test");\ntest("GET /api/orders", async ({ request }) => { const res = await request.get("/api/orders"); await expect(res).toBeOK(); });`;
+    expect(codes(src, "api.spec.js")).toEqual([]);
+  });
+
+  it("does not flag C2b for a Playwright API-test beforeEach that only sets up state", () => {
+    const src = `const { test } = require("@playwright/test");\ntest.beforeEach(async ({ request }) => { await request.post("/api/reset"); });`;
+    expect(codes(src, "api.spec.js")).not.toContain("C2b");
+  });
+
+  it("does not flag JS4 for a conditional skip in a Playwright API test", () => {
+    const src = `const { test, expect } = require("@playwright/test");\ntest("x", async ({ request }) => { test.skip(!process.env.API_URL, "no api"); await expect(await request.get("/api/health")).toBeOK(); });`;
+    expect(codes(src, "api.spec.js")).not.toContain("JS4");
+  });
+
+  // --- Playwright via a fixture re-export (test.extend / mergeTests wrapper) ---
+  // The suite gets test/expect from a fixture module, NOT @playwright/test, so
+  // fileImportsPlaywright is false; the Playwright-API signal (test.describe here)
+  // is what marks the file Playwright and suppresses the conditional-skip JS4.
+  it("does not flag JS4 for a conditional skip in a fixture-sourced Playwright suite", () => {
+    const src = `import { test, expect } from "@mendix/run-e2e/fixtures";\ntest.describe("grid", () => {\n  test("renders", async ({ page, browserName }) => {\n    test.skip(browserName === "firefox", "flaky on firefox");\n    await expect(page.locator("h1")).toBeVisible();\n  });\n});`;
+    expect(codes(src, "grid.spec.ts")).not.toContain("JS4");
+  });
+
+  it("still flags JS4 for test.skip(true, ...) in a fixture-sourced Playwright suite (disabled group)", () => {
+    const src = `import { test, expect } from "@mendix/run-e2e/fixtures";\ntest.describe("grid", () => {\n  test("renders", async ({ page }) => {\n    test.skip(true, "temporarily disabled");\n    await expect(page.locator("h1")).toBeVisible();\n  });\n});`;
+    expect(codes(src, "grid.spec.ts")).toContain("JS4");
+  });
+
+  // AVA uses test.before / bare describe — the Playwright-API signal must NOT trip
+  // on these, so an AVA it.skip still fires JS4 (no Playwright suppression).
+  it("does not treat an AVA-style test.before / bare describe file as Playwright", () => {
+    const src = `import test from "ava";\ntest.before(t => { t.context.db = connect(); });\ndescribe("group", () => {\n  it.skip("x", () => { expect(a).toBe(b); });\n});`;
+    expect(codes(src, "ava.test.ts")).toContain("JS4");
+  });
+
+  // Direct-import path unchanged: @playwright/test conditional skip still suppressed.
+  it("still suppresses JS4 for a direct-import Playwright conditional skip", () => {
+    const src = `import { test, expect } from "@playwright/test";\ntest("x", async ({ page, browserName }) => { test.skip(browserName === "firefox", "flaky"); await expect(page.locator("h1")).toBeVisible(); });`;
+    expect(codes(src, "e.spec.ts")).not.toContain("JS4");
+  });
+
+  // --- weighted fixture-param signal (flat spec, no import, no test.* API) -----
+  // browserName is Playwright-exclusive: on its own it identifies the file.
+  it("does not flag JS4 for a flat fixture-sourced spec destructuring browserName", () => {
+    const src = `import { test, expect } from "./fixtures/base";\ntest("renders", async ({ page, browserName }) => { test.skip(browserName === "firefox", "flaky"); await expect(page.locator("h1")).toBeVisible(); });`;
+    expect(codes(src, "flat.spec.ts")).not.toContain("JS4");
+  });
+
+  // An ambiguous fixture (request) corroborated by a Playwright-exclusive matcher
+  // (toBeOK) identifies a flat API spec.
+  it("does not flag JS4 for a flat API spec with request + a Playwright-exclusive matcher", () => {
+    const src = `import { test, expect } from "./fixtures/api";\ntest("GET", async ({ request }) => { test.skip(!process.env.API_URL, "no api"); const r = await request.get("/x"); await expect(r).toBeOK(); });`;
+    expect(codes(src, "flat-api.spec.ts")).not.toContain("JS4");
+  });
+
+  // ADVERSARIAL: request ALONE (no browserName, no Playwright-exclusive matcher)
+  // must NOT identify Playwright — a non-Playwright { request } test keeps JS4.
+  // This is the FP-would-become-FN guard: request alone never relaxes the gate.
+  it("still flags JS4 for a non-Playwright { request } test with a bare skip", () => {
+    const src = `const { test, expect } = require("some-runner");\ntest("x", async ({ request }) => { test.skip(); const r = await request.get("/u"); expect(r.status).toBe(200); });`;
+    expect(codes(src, "adv.spec.ts")).toContain("JS4");
+  });
+
+  it("still flags JS4 for a non-Playwright { request } test with a conditional-shape skip", () => {
+    const src = `const { test, expect } = require("some-runner");\ntest("y", async ({ request }) => { test.skip(!process.env.X, "reason"); const r = await request.get("/u"); expect(r.status).toBe(200); });`;
+    expect(codes(src, "adv.spec.ts")).toContain("JS4");
+  });
+
+  // Only test.skip itself is the conditional form. test.describe.skip and it.skip
+  // are unconditionally-disabled suites/tests and must still fire JS4 even in a
+  // Playwright file (name ends in ".skip" but is not the runtime guard).
+  it("still flags JS4 for a title-less test.describe.skip in a Playwright file", () => {
+    const src = `import { test, expect } from "@playwright/test";\ntest.describe.skip(() => { test("x", async ({ page }) => { await expect(page).toHaveURL("/"); }); });`;
+    expect(codes(src, "e.spec.ts")).toContain("JS4");
+  });
+
+  it("still flags JS4 for a title-less it.skip(fn) in a Playwright file", () => {
+    const src = `import { test, expect } from "@playwright/test";\ntest.describe("s", () => { it.skip(() => { expect(a).toBe(b); }); });`;
+    expect(codes(src, "e.spec.ts")).toContain("JS4");
+  });
 });
 
