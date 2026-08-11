@@ -5,8 +5,12 @@ name: codex-review-gate
 # branch protection): with zero open threads the job is green, so a PR Codex has
 # not touched still passes.
 #
-# - Re-runs on review, comment, and thread resolve/unresolve events, so the gate
-#   clears as soon as a thread is resolved and re-fires if one is reopened.
+# - Re-runs on push, review, and review-comment events. Resolving a thread emits
+#   no event Actions can observe, so after resolving, the gate clears on the next
+#   push or on a manual re-run of this check, not instantly. An earlier version
+#   listed `pull_request_review_thread` to get that instant clear; it is a webhook
+#   event, not a valid workflow trigger, so GitHub rejected the whole file and this
+#   gate produced zero-job startup failures instead of ever running.
 # - Outdated threads (their line changed in a newer push) are ignored: each push
 #   re-baselines the review, and Codex posts fresh threads if an issue remains.
 # - If a PR has more than 100 threads the gate fails closed and asks for a manual
@@ -18,7 +22,6 @@ on:
   pull_request:
   pull_request_review:
   pull_request_review_comment:
-  pull_request_review_thread:
 
 permissions:
   pull-requests: read
